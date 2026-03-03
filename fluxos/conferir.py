@@ -88,18 +88,30 @@ def conferir_lt(page: Page, carga: Carga) -> dict:
 
     # Bloco try principal para o RPA
     try:
-        # ETAPA 1: Encontrar a linha da LT na tabela
-        with TimeoutDetector("Encontrar LT na tabela", max_seconds=10, job_id=carga.numero_lt):
-            row_locator = page.locator(f"tr:has-text('{carga.numero_lt}')")
-            expect(row_locator).to_be_visible(timeout=10000)
+        for tentativa in range(1, 3):
+            try:
+                # ETAPA 1: Encontrar a linha da LT na tabela
+                with TimeoutDetector("Encontrar LT na tabela", max_seconds=10, job_id=carga.numero_lt):
+                    row_locator = page.locator(f"tr:has-text('{carga.numero_lt}')")
+                    expect(row_locator).to_be_visible(timeout=10000)
 
-        # ETAPA 2: Clicar no botão de edição da linha
-        with TimeoutDetector("Clicar botão edição", max_seconds=5, job_id=carga.numero_lt):
-            page.get_by_role("checkbox").get_by_role("button").first.click()
+                # ETAPA 2: Clicar no botão de edição da linha
+                with TimeoutDetector("Clicar botão edição", max_seconds=5, job_id=carga.numero_lt):
+                    page.get_by_role("checkbox").get_by_role("button").first.click()
 
-        # ETAPA 3: Aguardar formulário de edição abrir
-        with TimeoutDetector("Aguardar formulário", max_seconds=10, job_id=carga.numero_lt):
-            expect(page.get_by_role("textbox", name="Placa principal")).to_be_visible(timeout=10000)
+                # ETAPA 3: Aguardar formulário de edição abrir
+                with TimeoutDetector("Aguardar formulário", max_seconds=10, job_id=carga.numero_lt):
+                    expect(page.get_by_role("textbox", name="Placa principal")).to_be_visible(timeout=10000)
+
+                break
+            except TimeoutError as e:
+                if tentativa < 2:
+                    logger.warning(
+                        f"[Worker Conferência] Formulário não abriu (tentativa {tentativa}/2). Recarregando..."
+                    )
+                    page.reload(wait_until="networkidle")
+                    continue
+                raise
 
     except TimeoutError as e:
         motivo = f"Não foi possível encontrar ou clicar no botão de edição para a LT {carga.numero_lt}."
@@ -200,8 +212,11 @@ def conferir_lt(page: Page, carga: Carga) -> dict:
         
         # --- (Restante do preenchimento do formulário) ---
         with TimeoutDetector("Preencher campos restantes", max_seconds=25, job_id=carga.numero_lt):
-            page.locator(".MuiInputBase-root.MuiOutlinedInput-root.Mui-error > .MuiSelect-root").first.click() 
-            page.get_by_role("option", name="Redespacho Intermediário").click()
+            page.locator(".MuiInputBase-root.MuiOutlinedInput-root.Mui-error > .MuiSelect-root").first.click()
+            try:
+                page.get_by_role("option", name="Redespacho Intermediário").click()
+            except TimeoutError:
+                logger.error(f"[Worker Conferência] Opção 'Redespacho Intermediário' não encontrada - LT {carga.numero_lt}.")
 
             page.locator("div:nth-child(2) > .MuiFormControl-root > .MuiInputBase-root > .MuiSelect-root").click()
             page.get_by_role("option", name="Remetente").click()
@@ -212,8 +227,14 @@ def conferir_lt(page: Page, carga: Carga) -> dict:
             valor_ciot_formatado = f"{valor_ciot:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
             page.locator("div").filter(has_text=re.compile(r"^R\$Valor$")).get_by_placeholder("0,00").fill(valor_formatado)
             page.locator("div").filter(has_text=re.compile(r"^R\$Valor CIOT$")).get_by_placeholder("0,00").fill(valor_ciot_formatado)
-            page.locator("input[name=\"percAdiantamentoCiot\"]").click()
-            page.locator("input[name=\"percAdiantamentoCiot\"]").type("70,00")
+            ciot_input = page.locator("input[name=\"percAdiantamentoCiot\"]")
+            if ciot_input.is_enabled():
+                ciot_input.click()
+                ciot_input.type("70,00")
+            else:
+                motivo = "Campo CIOT desabilitado (provavel campo obrigatorio nao preenchido)"
+                logger.error(f"[Worker Conferência] {motivo} - LT {carga.numero_lt}.")
+                return cancelar_e_sair(campo="CIOT", valor=motivo, tipo_erro="falha_rpa")
             
             page.get_by_role("checkbox", name="Emitir Averbação").uncheck()
 
