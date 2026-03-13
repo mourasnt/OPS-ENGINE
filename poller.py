@@ -55,7 +55,7 @@ def obter_dados_para_poller(config):
         header_map = {h: i + 1 for i, h in enumerate(headers) if h}
 
         # Colunas mínimas para controle de filas
-        required_cols = ['Status de emissão', 'N° Carga', 'ID 3ZX', 'Status', 'MDFe']
+        required_cols = ['Status de emissão', 'N° Carga', 'ID 3ZX', 'Status', 'MDFe', 'MDF-e Baixado ?']
         missing_required = [col for col in required_cols if col not in header_map]
         if missing_required:
             logger.critical(f"Colunas obrigatórias ausentes no cabeçalho: {missing_required}")
@@ -219,6 +219,7 @@ def iniciar_poller(config):
 
                 # --- 5. Lógica de Fila: Encerramento de Manifesto (MDFe) ---
                 elif mdfe and mdfe_baixado != 'SIM' and statusEmissao in STATUS_TERMINAIS + ["AGUARDANDO DESCARGA"]:
+                    logger.info(f"MDFe {mdfe} encontrado para LT {lt} com status de emissão '{statusEmissao}' e MDFe Baixado '{mdfe_baixado}'. Verificando se deve criar job de encerramento de manifesto...")
                     manifesto_id = f"{mdfe}-{lt}"
                     foi_adicionado_manifesto = r.sadd(s_manifesto, manifesto_id)
                     if foi_adicionado_manifesto == 1:

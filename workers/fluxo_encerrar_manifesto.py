@@ -142,20 +142,24 @@ def fluxo_encerrar_manifesto_worker(page: Page, config: dict):
                 continue
 
             # --- Lógica Playwright de encerramento (placeholder) ---
-            logger.info(f"[Worker Manifesto] (PLACEHOLDER) Encerramento de manifesto para MDFe {mdfe} - implementar Playwright depois.")
-            card_locator = page.locator(".MuiGrid-root.MuiGrid-item.MuiGrid-grid-xs-12.MuiGrid-grid-sm-6").filter(
-                has_text=re.compile(rf"Nº:\s*{re.escape(lt)}")
-            )
-            card = card_locator.first
+            try:
+                logger.info(f"[Worker Manifesto] (PLACEHOLDER) Encerramento de manifesto para MDFe {mdfe} - implementar Playwright depois.")
+                card_locator = page.locator(".MuiGrid-root.MuiGrid-item.MuiGrid-grid-xs-12.MuiGrid-grid-sm-6").filter(
+                    has_text=re.compile(rf"DT:\s*{re.escape(lt)}")
+                )
+                card = card_locator.first
+            except Exception as e:
+                logger.error(f"[Worker Manifesto] Erro ao localizar card para LT {lt}: {e}")
+
             card.locator("span", has_text=re.compile(r"^\s*MDF-e\s*$")).first.locator("xpath=../..").locator("button").first.click()
 
-            page.get_by_type("checkbox").first.check()
+            page.get_by_role("checkbox").first.check()
             page.get_by_text("Opções").first.click()
             
 
 
             try:
-                opcao = page.get_by_role("menuitem", name=re.compile("Encerrar", re.I))
+                opcao = page.get_by_role("menuitem", name=re.compile("Encerrar", re.I)).first
                 opcao.click(timeout=10000)
             except Exception as e:
                 motivo = f"Opção 'Encerrar' não encontrado no menu: {e}"
@@ -163,6 +167,7 @@ def fluxo_encerrar_manifesto_worker(page: Page, config: dict):
 
             try:
                 agora = datetime.now()
+                
                 data_encerramento = agora.strftime('%d/%m/%Y %H:%M')
                 page.get_by_role("input", name="dataEncerramento").fill(data_encerramento)
 
