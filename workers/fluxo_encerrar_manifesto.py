@@ -1,4 +1,7 @@
 
+from datetime import datetime
+import re
+
 import redis
 import json
 import time
@@ -136,14 +139,53 @@ def fluxo_encerrar_manifesto_worker(page: Page, config: dict):
             status_mdfe = resultado.get("status_mdfe")
             if status_mdfe != "autorizado":
                 logger.warning(f"[Worker Manifesto] MDFe {mdfe} não está autorizado (Status: {status_mdfe}). Pulando job.")
-                enviar_job_update(r, config, linha_num, ["Status de emissão"], [f"Manifesto não autorizado ({status_mdfe})"])
                 continue
 
             # --- Lógica Playwright de encerramento (placeholder) ---
             logger.info(f"[Worker Manifesto] (PLACEHOLDER) Encerramento de manifesto para MDFe {mdfe} - implementar Playwright depois.")
+            card_locator = page.locator(".MuiGrid-root.MuiGrid-item.MuiGrid-grid-xs-12.MuiGrid-grid-sm-6").filter(
+                has_text=re.compile(rf"Nº:\s*{re.escape(lt)}")
+            )
+            card = card_locator.first
+            card.locator("span", has_text=re.compile(r"^\s*MDF-e\s*$")).first.locator("xpath=../..").locator("button").first.click()
 
-            # Exemplo de update após sucesso
-            enviar_job_update(r, config, linha_num, ["Status de emissão"], ["Manifesto Encerrado"])
+            page.get_by_type("checkbox").first.check()
+            page.get_by_text("Opções").first.click()
+            
+
+
+            try:
+                opcao = page.get_by_role("menuitem", name=re.compile("Encerrar", re.I))
+                opcao.click(timeout=10000)
+            except Exception as e:
+                motivo = f"Opção 'Encerrar' não encontrado no menu: {e}"
+                logger.error(f"[MDF-e Encerrar] [LT {lt}] {motivo}")
+
+            try:
+                agora = datetime.now()
+                data_encerramento = agora.strftime('%d/%m/%Y %H:%M')
+                page.get_by_role("input", name="dataEncerramento").fill(data_encerramento)
+
+                time.sleep(2)
+                page.get_by_text("Confirmar").click()
+                time.sleep(2)
+                page.get_by_text("Confirmar").click()
+
+                alerta = page.locator(".MuiAlert-message").first
+                texto_alerta = alerta.inner_text(timeout=10000)
+
+                if "sucesso" in texto_alerta.lower() or "emitido" in texto_alerta.lower():
+                    logger.success(f"[MDF-e Encerrar] [LT {lt}] Encerramento realizado: {texto_alerta}")
+                    enviar_job_update(r, config, linha_num, ["MDF-e Baixado ?"], ["SIM"])
+                else:
+                    logger.warning(f"[MDF-e Encerrar] [LT {lt}] Alerta sem texto de sucesso: {texto_alerta}")
+
+            except TimeoutError:
+                motivo = "Timeout aguardando campos ou alerta de confirmação."
+                logger.error(f"[MDF-e Encerrar] [LT {lt}] {motivo}")
+            except Exception as e:
+                motivo = f"Erro no modal de emissão: {e}"
+                logger.error(f"[MDF-e Encerrar] [LT {lt}] {motivo}")     
 
             tentativas_reconexao = 0
 

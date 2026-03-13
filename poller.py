@@ -216,23 +216,9 @@ def iniciar_poller(config):
                     else:
                         logger.debug(f"Job {lt} (Emissão) já está em progresso. Pulando.")
 
-                # --- 4. Lógica de Fila: Baixar MDFE
-                elif statusEmissao == 'Finalizado':
-                    foi_adicionado = r.sadd(s_controle, id)
-                    if foi_adicionado == 1:
-                        job_payload = {
-                            'row': linha['original_row_number'],
-                            'data': linha
-                        }
-                        r.rpush(q_emissao, json.dumps(job_payload))
-                        logger.info(f"Novo job de EMISSÃO para LT {lt} (Linha {linha['original_row_number']})")
-                        cont_emissao += 1
-                    else:
-                        logger.debug(f"Job {lt} (Emissão) já está em progresso. Pulando.")
 
                 # --- 5. Lógica de Fila: Encerramento de Manifesto (MDFe) ---
-                # Só cria job se MDFe estiver preenchido e MDF-e Baixado? for diferente de SIM
-                if mdfe and mdfe_baixado != 'SIM':
+                elif mdfe and mdfe_baixado != 'SIM':
                     manifesto_id = f"{mdfe}-{lt}"
                     foi_adicionado_manifesto = r.sadd(s_manifesto, manifesto_id)
                     if foi_adicionado_manifesto == 1:
