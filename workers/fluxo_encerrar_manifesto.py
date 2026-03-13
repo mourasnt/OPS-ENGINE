@@ -130,7 +130,7 @@ def fluxo_encerrar_manifesto_worker(page: Page, config: dict):
 
             # --- Lógica principal do job ---
             from utils.manifesto_utils import navegar_e_validar_mdfe
-            resultado = navegar_e_validar_mdfe(page, mdfe)
+            resultado = navegar_e_validar_mdfe(page, lt)
             if not resultado:
                 logger.error(f"[Worker Manifesto] Não foi possível navegar ou validar status do MDFe {mdfe}.")
                 enviar_job_append_erro(r, config, mdfe, "Erro Navegação/Validação", "Card ou status não encontrado")

@@ -182,7 +182,7 @@ def iniciar_poller(config):
                     continue
 
                 # --- 1. Lógica de Limpeza ---
-                if statusEmissao in STATUS_TERMINAIS and mdfe:
+                if statusEmissao in STATUS_TERMINAIS and (mdfe_baixado == "SIM" or mdfe == False ):
                     foi_removido = r.srem(s_controle, id)
                     if foi_removido == 1:
                         logger.debug(f"Job {lt} concluído. Removido do set de controle.")
@@ -218,7 +218,7 @@ def iniciar_poller(config):
 
 
                 # --- 5. Lógica de Fila: Encerramento de Manifesto (MDFe) ---
-                elif mdfe and mdfe_baixado != 'SIM':
+                elif mdfe and mdfe_baixado != 'SIM' and statusEmissao in STATUS_TERMINAIS + ["AGUARDANDO DESCARGA"]:
                     manifesto_id = f"{mdfe}-{lt}"
                     foi_adicionado_manifesto = r.sadd(s_manifesto, manifesto_id)
                     if foi_adicionado_manifesto == 1:
