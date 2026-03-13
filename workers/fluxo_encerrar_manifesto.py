@@ -159,22 +159,35 @@ def fluxo_encerrar_manifesto_worker(page: Page, config: dict):
 
 
             try:
-                opcao = page.get_by_role("menuitem", name=re.compile("Encerrar", re.I)).first
-                opcao.click(timeout=10000)
+                opcao_encerrar = page.get_by_role("menuitem", name="Encerrar").first
+
+                # Manda o Playwright esperar até 3 segundos (3000ms) para o botão aparecer/terminar a animação
+                opcao_encerrar.wait_for(state="visible", timeout=3000) 
+
+                # Se chegou até aqui sem dar erro de Timeout, é porque está visível!
+                opcao_encerrar.click()
+                logger.info("Clicou na opção 'Encerrar' com sucesso!")
+
             except Exception as e:
-                motivo = f"Opção 'Encerrar' não encontrado no menu: {e}"
+                # Se passar os 3 segundos e ele não aparecer, cai direto aqui (sem travar o código por 30s)
+                motivo = "A opção 'Encerrar' não está disponível neste menu ou não carregou a tempo."
                 logger.error(f"[MDF-e Encerrar] [LT {lt}] {motivo}")
 
             try:
                 agora = datetime.now()
-                
                 data_encerramento = agora.strftime('%d/%m/%Y %H:%M')
-                page.get_by_role("input", name="dataEncerramento").fill(data_encerramento)
+                
+                campo_data = page.locator('input[name="dataEncerramento"]')
+
+                campo_data.wait_for(state="visible", timeout=5000)
+                
+                campo_data.click()
+                campo_data.fill(data_encerramento)
 
                 time.sleep(2)
-                page.get_by_text("Confirmar").click()
+                page.get_by_text("Confirmar").first.click()
                 time.sleep(2)
-                page.get_by_text("Confirmar").click()
+                page.get_by_text("Confirmar").nth(1).click()
 
                 alerta = page.locator(".MuiAlert-message").first
                 texto_alerta = alerta.inner_text(timeout=10000)
