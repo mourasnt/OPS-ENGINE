@@ -183,23 +183,18 @@ def fluxo_verificar_emissao_worker(page: Page, config: dict):
                     enviar_job_update(r, config, linha_num, ["Status de emissão"], ["Finalizado"])
                 continue # Pega o próximo job
             
-            logger.info(f"[Worker Emissão] Iniciando RPA para LT: {numero_lt} (Linha {linha_num})")
 
-            with TimeoutDetector("Navegar para Cards", max_seconds=20, job_id=numero_lt):
-                goto_cards(page)
-            
-            with TimeoutDetector("Filtrar Cards", max_seconds=15, job_id=numero_lt):
-                filtro_cards(page, numero_lt)
-            
-            # 'analisar_status_emissao' é uma função de RPA
-            with TimeoutDetector("Analisar Status de Emissão", max_seconds=20, job_id=numero_lt):
-                analise = analisar_status_emissao(page, numero_lt)
-            if not analise:
+            logger.info(f"[Worker Emissão] Iniciando RPA para LT: {numero_lt} (Linha {linha_num})")
+            from utils.manifesto_utils import navegar_e_validar_mdfe
+            resultado = navegar_e_validar_mdfe(page, numero_lt)
+            if not resultado:
                 logger.error(f"[Worker Emissão] Não foi possível encontrar o card ou analisar o status para a LT {numero_lt}.")
                 continue # Pula para o próximo job
 
-            card = analise.get("card")
-            status_card = analise.get("status_card")
+            card = resultado.get("card")
+            analise = resultado.get("analise")
+            status_card = analise.get("status_card") if analise else None
+            status_mdfe = resultado.get("status_mdfe")
 
             if not card or not status_card:
                 logger.error(f"[Worker Emissão] Não foi possível encontrar o card ou analisar o status para a LT {numero_lt}.")

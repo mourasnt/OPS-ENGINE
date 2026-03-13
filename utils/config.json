@@ -17,7 +17,9 @@
     "results_queue": "fila:resultados",
     "conference_queue": "fila:conferencia",
     "emission_queue": "fila:emissao",
-    "control_set": "jobs_em_progresso"
+    "control_set": "jobs_em_progresso",
+    "manifesto_queue": "fila:manifesto",
+    "manifesto_set": "jobs_manifesto_em_progresso"
   },
 
   "writer_settings": {

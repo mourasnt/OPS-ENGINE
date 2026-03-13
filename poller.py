@@ -55,17 +55,14 @@ def obter_dados_para_poller(config):
         header_map = {h: i + 1 for i, h in enumerate(headers) if h}
 
         # Colunas mínimas para controle de filas
-        required_cols = ['Status de emissão', 'N° Carga', 'ID 3ZX', 'Status']
+        required_cols = ['Status de emissão', 'N° Carga', 'ID 3ZX', 'Status', 'MDFe']
         missing_required = [col for col in required_cols if col not in header_map]
         if missing_required:
             logger.critical(f"Colunas obrigatórias ausentes no cabeçalho: {missing_required}")
             return pd.DataFrame()
 
         # Colunas adicionais necessárias pelos workers (ex.: conferência usa frete/placas)
-        optional_cols = [
-            'Tabela Frete', 'Pedágio', 'Placa', 'Placa 2',
-            'Origem', 'Destino', 'Motorista', 'CTE', 'MDFe'
-        ]
+        optional_cols = ['Tabela Frete', 'Pedágio', 'Placa', 'Placa 2', 'Origem', 'Destino', 'Motorista', 'CTE']
         missing_optional = [col for col in optional_cols if col not in header_map]
         if missing_optional:
             logger.warning(f"Colunas opcionais não encontradas: {missing_optional}. Valores serão preenchidos vazios.")
@@ -121,15 +118,18 @@ def iniciar_poller(config):
     r_host = redis_cfg.get('host')
     r_port = redis_cfg.get('port')
     r_db = redis_cfg.get('db')
+
     q_conferencia = redis_cfg.get('conference_queue')
     q_emissao = redis_cfg.get('emission_queue')
+    q_manifesto = redis_cfg.get('manifesto_queue')  # Nova fila para jobs de encerramento de manifesto
     s_controle = redis_cfg.get('control_set')
+    s_manifesto = redis_cfg.get('manifesto_set', 'jobs_manifesto_em_progresso')  # Novo set de controle para manifesto
     intervalo = poller_cfg.get('poll_interval_seconds', 300) # Padrão 5 min
 
-    if not all([r_db, r_host, r_port, q_conferencia, q_emissao, s_controle]):
-        logger.critical("Configurações do Redis (filas ou set) estão faltando no config.json.")
+    if not all([r_db, r_host, r_port, q_conferencia, q_emissao, s_controle, q_manifesto, s_manifesto]):
+        logger.critical("Configurações do Redis (filas ou set) estão faltando no config.json (incluindo manifesto_queue/set).")
         return
-        
+
     try:
         from utils.redis_client import get_redis
         r = get_redis(host=r_host, port=r_port, db=r_db)
@@ -162,8 +162,10 @@ def iniciar_poller(config):
             time.sleep(intervalo)
             continue
 
+
         cont_conferencia = 0
         cont_emissao = 0
+        cont_manifesto = 0
         cont_limpeza = 0
         dados = df_planilha.to_dict('records')
 
@@ -173,33 +175,33 @@ def iniciar_poller(config):
                 status = linha.get('Status', '').strip()
                 lt = linha.get('N° Carga', '').strip()
                 id = linha.get('ID 3ZX', '').strip()
-                
+                mdfe = linha.get('MDFe', '').strip()  # Corrigido para o nome correto da coluna
+                mdfe_baixado = linha.get('MDF-e Baixado ?', '').strip().upper()  # Pode ser 'SIM' ou 'NÃO'
+
                 if not lt:
                     continue
 
                 # --- 1. Lógica de Limpeza ---
-                # Se o status é terminal, remove do set de controle.
-                if statusEmissao in STATUS_TERMINAIS:
+                if statusEmissao in STATUS_TERMINAIS and mdfe:
                     foi_removido = r.srem(s_controle, id)
                     if foi_removido == 1:
                         logger.debug(f"Job {lt} concluído. Removido do set de controle.")
                         cont_limpeza += 1
-                
+
                 # --- 2. Lógica de Fila: Conferência ---
                 elif statusEmissao == 'Pendente' and status in STATUS_CONFERIR:
-                    # Tenta adicionar o LT ao set. Se retornar 1, é um novo job.
                     foi_adicionado = r.sadd(s_controle, id)
                     if foi_adicionado == 1:
                         job_payload = {
                             'row': linha['original_row_number'],
-                            'data': linha # Envia a linha inteira para o worker
+                            'data': linha
                         }
                         r.rpush(q_conferencia, json.dumps(job_payload))
                         logger.info(f"Novo job de CONFERÊNCIA para LT {lt} (Linha {linha['original_row_number']})")
                         cont_conferencia += 1
                     else:
                         logger.debug(f"Job {lt} (Conferência) já está em progresso. Pulando.")
-                
+
                 # --- 3. Lógica de Fila: Emissão ---
                 elif statusEmissao == 'Verificar Emissão':
                     foi_adicionado = r.sadd(s_controle, id)
@@ -213,12 +215,42 @@ def iniciar_poller(config):
                         cont_emissao += 1
                     else:
                         logger.debug(f"Job {lt} (Emissão) já está em progresso. Pulando.")
-            
+
+                # --- 4. Lógica de Fila: Baixar MDFE
+                elif statusEmissao == 'Finalizado':
+                    foi_adicionado = r.sadd(s_controle, id)
+                    if foi_adicionado == 1:
+                        job_payload = {
+                            'row': linha['original_row_number'],
+                            'data': linha
+                        }
+                        r.rpush(q_emissao, json.dumps(job_payload))
+                        logger.info(f"Novo job de EMISSÃO para LT {lt} (Linha {linha['original_row_number']})")
+                        cont_emissao += 1
+                    else:
+                        logger.debug(f"Job {lt} (Emissão) já está em progresso. Pulando.")
+
+                # --- 5. Lógica de Fila: Encerramento de Manifesto (MDFe) ---
+                # Só cria job se MDFe estiver preenchido e MDF-e Baixado? for diferente de SIM
+                if mdfe and mdfe_baixado != 'SIM':
+                    manifesto_id = f"{mdfe}-{lt}"
+                    foi_adicionado_manifesto = r.sadd(s_manifesto, manifesto_id)
+                    if foi_adicionado_manifesto == 1:
+                        job_payload = {
+                            'row': linha['original_row_number'],
+                            'data': linha
+                        }
+                        r.rpush(q_manifesto, json.dumps(job_payload))
+                        logger.info(f"Novo job de ENCERRAMENTO DE MANIFESTO para MDFe {mdfe} (Linha {linha['original_row_number']})")
+                        cont_manifesto += 1
+                    else:
+                        logger.debug(f"Job de Manifesto {mdfe} já está em progresso. Pulando.")
+
             except Exception as e:
                 logger.error(f"Erro ao processar linha {linha.get('original_row_number', 'N/A')}: {e}")
 
         logger.info(f"Ciclo de polling finalizado.")
-        logger.info(f"Novos Jobs: {cont_conferencia} (Conferência), {cont_emissao} (Emissão).")
+        logger.info(f"Novos Jobs: {cont_conferencia} (Conferência), {cont_emissao} (Emissão), {cont_manifesto} (Encerramento Manifesto).")
         logger.info(f"Jobs Limpos: {cont_limpeza}.")
         logger.info(f"Próximo ciclo em {intervalo} segundos.")
         time.sleep(intervalo)
