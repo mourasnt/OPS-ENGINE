@@ -183,11 +183,16 @@ def fluxo_encerrar_manifesto_worker(page: Page, config: dict):
                 
                 campo_data.click()
                 campo_data.fill(data_encerramento)
-
                 time.sleep(2)
+
                 page.get_by_text("Confirmar").first.click()
                 time.sleep(2)
-                page.get_by_text("Confirmar").nth(1).click()
+                
+                modal_confirmacao = page.locator('div[role="dialog"]').filter(has_text="Confirmação de encerramento MDF-e")
+
+                botao_final = modal_confirmacao.get_by_role("button", name="Confirmar")
+                botao_final.wait_for(state="visible", timeout=5000)
+                botao_final.click()
 
                 alerta = page.locator(".MuiAlert-message").first
                 texto_alerta = alerta.inner_text(timeout=10000)
