@@ -96,6 +96,7 @@ def fluxo_encerrar_manifesto_worker(page: Page, config: dict):
     tentativas_reconexao = 0
     max_tentativas_reconexao = 3
     job_atual = None
+    manifesto_id = None
 
     while True:
         # Downscaling
@@ -229,10 +230,13 @@ def fluxo_encerrar_manifesto_worker(page: Page, config: dict):
             # Finalizar job no watchdog
             if watchdog and job_atual:
                 watchdog.finalizar_job(job_atual)
-            try:
-                logger.debug(f"[Worker Manifesto] [{manifesto_id}] Processamento finalizado. Removendo cadeado do '{s_manifesto}'.")
-                r.srem(s_manifesto, manifesto_id)
-            except Exception as e_redis:
-                logger.error(f"[Worker Manifesto] [{manifesto_id}] FALHA CRÍTICA ao remover cadeado do '{s_manifesto}': {e_redis}")
+            if manifesto_id:
+                try:
+                    logger.debug(f"[Worker Manifesto] [{manifesto_id}] Processamento finalizado. Removendo cadeado do '{s_manifesto}'.")
+                    r.srem(s_manifesto, manifesto_id)
+                except Exception as e_redis:
+                    logger.error(f"[Worker Manifesto] [{manifesto_id}] FALHA CRÍTICA ao remover cadeado do '{s_manifesto}': {e_redis}")
+            else:
+                logger.debug("[Worker Manifesto] manifesto_id não definido no finally; pulando remoção de cadeado.")
 
     logger.info(f"[Worker Manifesto] Encerrado.")

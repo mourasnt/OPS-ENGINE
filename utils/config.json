@@ -12,7 +12,7 @@
 
   "redis_settings": {
     "db": 3,
-    "host": "redis-emiteai",
+    "host": "redis-emiteai-manifestos",
     "port": 6379,
     "results_queue": "fila:resultados",
     "conference_queue": "fila:conferencia",
