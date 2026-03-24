@@ -138,8 +138,12 @@ def fluxo_encerrar_manifesto_worker(page: Page, config: dict):
                 continue
 
             status_mdfe = resultado.get("status_mdfe")
-            if status_mdfe != "autorizado":
-                logger.warning(f"[Worker Manifesto] MDFe {mdfe} não está autorizado (Status: {status_mdfe}). Pulando job.")
+            if status_mdfe == "encerrado":
+                logger.warning(f"[Worker Manifesto] MDFe {mdfe} está encerrado. Atualizando planilha.")
+                enviar_job_update(r, config, linha_num, ["MDF-e Baixado ?"], ["SIM"])
+                continue
+            elif status_mdfe != "autorizado":
+                logger.warning(f"[Worker Manifesto] MDFe {mdfe} não está autorizado e nem encerrado (Status: {status_mdfe}). Pulando job.")
                 continue
 
             # --- Lógica Playwright de encerramento (placeholder) ---

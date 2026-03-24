@@ -218,7 +218,7 @@ def iniciar_poller(config):
 
 
                 # --- 5. Lógica de Fila: Encerramento de Manifesto (MDFe) ---
-                elif mdfe and mdfe_baixado != 'SIM' and statusEmissao in STATUS_TERMINAIS + ["AGUARDANDO DESCARGA"]:
+                elif mdfe and mdfe_baixado != 'SIM' and statusEmissao in STATUS_TERMINAIS and status in ("ENTREGA FINALIZADA", "AGUARDANDO DESCARGA"):
                     logger.info(f"MDFe {mdfe} encontrado para LT {lt} com status de emissão '{statusEmissao}' e MDFe Baixado '{mdfe_baixado}'. Verificando se deve criar job de encerramento de manifesto...")
                     manifesto_id = f"{mdfe}-{lt}"
                     foi_adicionado_manifesto = r.sadd(s_manifesto, manifesto_id)
