@@ -21,7 +21,7 @@ class WorkerSM:
         redis_cfg = config_dict.get('redis_settings', {})
         r_host = os.environ.get('REDIS_HOST')
         r_port = int(os.environ.get('REDIS_PORT'))
-        r_db_filas = redis_cfg.get('db_filas')
+        r_db_filas = redis_cfg.get('db_fila')
         r_db_bases = redis_cfg.get('db_bases') 
         
         self.r_filas = get_redis(host=r_host, port=r_port, db=r_db_filas)

@@ -48,7 +48,7 @@ def fluxo_encerrar_manifesto_worker(page: Page, config: dict):
     redis_cfg = config.get('redis_settings', {})
     r_host = os.environ.get('REDIS_HOST')
     r_port = int(os.environ.get('REDIS_PORT'))
-    r_db_filas = redis_cfg.get('db_filas')
+    r_db_filas = redis_cfg.get('db_fila')
     q_manifesto = redis_cfg.get('manifesto_queue')
     s_manifesto = redis_cfg.get('manifesto_set')
     if not q_manifesto or not s_manifesto:

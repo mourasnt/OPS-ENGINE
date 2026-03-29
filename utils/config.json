@@ -15,7 +15,7 @@
   "creds_path": "dados/credentials.json",
 
   "redis_settings": {
-    "db_filas": 3,
+    "db_fila": 3,
     "db_state": 4,
     "db_bases": 5,
     "results_queue": "fila:resultados",

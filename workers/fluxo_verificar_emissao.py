@@ -45,7 +45,7 @@ def fluxo_verificar_emissao_worker(page: Page, config: dict):
     redis_cfg = config.get('redis_settings', {})
     r_host = os.environ.get('REDIS_HOST')
     r_port = int(os.environ.get('REDIS_PORT'))
-    r_db_filas = redis_cfg.get('db_filas')
+    r_db_filas = redis_cfg.get('db_fila')
     q_emissao = redis_cfg.get('emission_queue')
     s_controle = redis_cfg.get('control_set')
     if not s_controle:

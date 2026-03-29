@@ -244,7 +244,7 @@ def iniciar_poller(config):
     r_port = int(os.environ.get('REDIS_PORT'))
     
     # DB para filas (Jobs)
-    r_db_filas = redis_cfg.get('db_filas')
+    r_db_filas = redis_cfg.get('db_fila')
     # DB para estado do CDC
     r_db_estado = redis_cfg.get('db_state') 
     # DB para Cache de Bases (SM)
