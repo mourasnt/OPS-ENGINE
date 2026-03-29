@@ -7,7 +7,6 @@ from playwright.sync_api import sync_playwright
 from loguru import logger
 from typing import Dict, Any
 
-# --- Imports da sua aplicação ---
 try:
     from utils.helpers import carregar_config 
 except ImportError:
@@ -44,15 +43,16 @@ from workers.fluxo_verificar_emissao import fluxo_verificar_emissao_worker
 from workers.fluxo_encerrar_manifesto import fluxo_encerrar_manifesto_worker
 from fluxos.fluxo_login import fluxo_login
 
+try:
+    from workers.fluxo_sm import fluxo_sm_worker
+except ImportError:
+    logger.warning("Não foi possível encontrar 'workers.fluxo_sm.fluxo_sm_worker'. Crie este arquivo em breve.")
 
-# --- Configuração do Logger para APENAS logs importantes ---
 logger.remove()
 
-# Função de filtro para mostrar apenas logs importantes
 def filtro_logs_importantes(record):
     """Filtra para mostrar apenas WARNING, ERROR, CRITICAL e SUCCESS (que é INFO)."""
     level_name = record["level"].name
-    # Mostrar apenas estes níveis no console
     return level_name in ["WARNING", "ERROR", "CRITICAL", "SUCCESS"]
 
 # Logs IMPORTANTES para stdout (Docker)
@@ -74,17 +74,17 @@ logger.add(
 )
 
 
-USUARIO = os.environ.get('RPA_USUARIO', "35036755820")
-SENHA = os.environ.get('RPA_SENHA', "120487@Ka")
+USUARIO = os.environ.get('RPA_USUARIO')
+SENHA = os.environ.get('RPA_SENHA')
 
 if not USUARIO or not SENHA:
     logger.critical("Variáveis RPA_USUARIO/RPA_SENHA não configuradas. Defina-as no ambiente.")
     exit(1)
 
 # ===================================================================
-# FUNÇÃO DE EXECUÇÃO DE FLUXO (Alvo da Thread - CORRIGIDA)
+# FUNÇÃO DE EXECUÇÃO DE FLUXO (Alvo da Thread - RPA Web/Playwright)
 # ===================================================================
-def executar_fluxo(nome_fluxo: str, funcao_fluxo, config: Dict[str, Any]): # <--- CORREÇÃO: 'browser' removido
+def executar_fluxo(nome_fluxo: str, funcao_fluxo, config: Dict[str, Any]): 
     """
     Executa um único worker de automação em seu próprio contexto E
     em sua própria instância do Playwright.
@@ -92,7 +92,6 @@ def executar_fluxo(nome_fluxo: str, funcao_fluxo, config: Dict[str, Any]): # <--
     context = None
     browser = None 
     
-    # --- CORREÇÃO: O 'with' do Playwright vem PARA DENTRO da thread ---
     with sync_playwright() as playwright:
         try:
             logger.info(f"Iniciando thread e navegador para o worker: '{nome_fluxo}'")
@@ -145,7 +144,32 @@ def executar_fluxo(nome_fluxo: str, funcao_fluxo, config: Dict[str, Any]): # <--
             logger.info(f"Thread do worker '{nome_fluxo}' foi finalizada e recursos liberados.")
 
 # ===================================================================
-# MAIN (Orquestrador com ThreadPoolManager - NOVO)
+# FUNÇÃO DE EXECUÇÃO DE FLUXO PARA API (Sem Playwright)
+# ===================================================================
+def executar_fluxo_api(nome_fluxo: str, funcao_fluxo, config: Dict[str, Any]):
+    """
+    Executa um worker baseado puramente em API (Background Jobs).
+    Não inicializa o Playwright, poupando memória e CPU consideravelmente.
+    """
+    try:
+        logger.info(f"Iniciando thread de API para o worker: '{nome_fluxo}'")
+        
+        # Como não tem navegador (page), passamos apenas o config
+        funcao_fluxo(config) 
+        
+        logger.info(f"Worker de API '{nome_fluxo}' encerrou seu loop de consumo.")
+
+    except Exception as e:
+        import traceback
+        mensagem_erro = f"Erro fatal no worker de API '{nome_fluxo}': {e}"
+        logger.critical(mensagem_erro)
+        logger.critical(f"Stack trace completo:\n{traceback.format_exc()}")
+    finally:
+        logger.info(f"Thread do worker de API '{nome_fluxo}' foi finalizada.")
+
+
+# ===================================================================
+# MAIN (Orquestrador com ThreadPoolManager)
 # ===================================================================
 def main():
     config = carregar_config()
@@ -199,7 +223,7 @@ def main():
             usuario=USUARIO,
             senha=SENHA,
             rebalance_interval=60,  # Verifica a cada 60 segundos
-            max_threads_per_type=10,  # Máximo 10 threads por tipo (conferência/emissão/manifesto)
+            max_threads_per_type=10,  # Máximo 10 threads por tipo
             max_total_threads=20,  # Máximo 20 threads no total
             status_display=status_display,  # Passar o status display
         )
@@ -209,9 +233,17 @@ def main():
 
         # Inicia os workers em threads separadas
         threads = []
+        # Workers Web (com Playwright)
         threads.append(threading.Thread(target=executar_fluxo, args=("conferencia", fluxo_conferencia_worker, config), daemon=True))
         threads.append(threading.Thread(target=executar_fluxo, args=("emissao", fluxo_verificar_emissao_worker, config), daemon=True))
         threads.append(threading.Thread(target=executar_fluxo, args=("manifesto", fluxo_encerrar_manifesto_worker, config), daemon=True))
+        
+        # Workers de API (Sem Playwright)
+        if 'fluxo_sm_worker' in globals():
+            threads.append(threading.Thread(target=executar_fluxo_api, args=("gerenciamento_risco", fluxo_sm_worker, config), daemon=True))
+        else:
+            logger.warning("Worker de SM (Gerenciamento Risco) ignorado na inicialização pois o import falhou.")
+
         for t in threads:
             t.start()
 
