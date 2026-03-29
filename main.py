@@ -163,11 +163,10 @@ def main():
     # --- Inicialização do Redis ---
     redis_cfg = config.get('redis_settings', {})
     try:
-        redis_host = os.environ.get('REDIS_HOST', redis_cfg.get('host', 'localhost'))
-        redis_port = int(os.environ.get('REDIS_PORT', redis_cfg.get('port', 6379)))
+        redis_host = os.environ.get('REDIS_HOST')
+        redis_port = int(os.environ.get('REDIS_PORT'))
         
-        # Pega a chave db_fila com fallback para db (garante compatibilidade)
-        redis_db = redis_cfg.get('db_fila', redis_cfg.get('db'))
+        redis_db = redis_cfg.get('db_fila')
         
         if redis_db is None:
             logger.critical("O banco 'db_fila' não está definido no config.json em redis_settings.")

@@ -130,9 +130,9 @@ def iniciar_writer(config):
     error_ws_name = error_sheet_cfg.get('worksheet_name')
 
     redis_cfg = config.get('redis_settings', {})
-    r_host = redis_cfg.get('host')
-    r_port = redis_cfg.get('port')
-    r_db = redis_cfg.get('db')
+    r_host = os.environ.get('REDIS_HOST')
+    r_port = int(os.environ.get('REDIS_PORT'))
+    r_db = redis_cfg.get('db_fila')
     fila_resultados = redis_cfg.get('results_queue')
 
     writer_cfg = config.get('writer_settings', {})

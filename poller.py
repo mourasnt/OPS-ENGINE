@@ -240,8 +240,8 @@ def iniciar_poller(config):
     poller_cfg = config.get('poller_settings', {})
     sm_cfg = config.get('sm_settings', {}) # Novas configs de SM
     
-    r_host = redis_cfg.get('host')
-    r_port = redis_cfg.get('port')
+    r_host = os.environ.get('REDIS_HOST')
+    r_port = int(os.environ.get('REDIS_PORT'))
     
     # DB para filas (Jobs)
     r_db_filas = redis_cfg.get('db_filas')
