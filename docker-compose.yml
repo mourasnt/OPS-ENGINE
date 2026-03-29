@@ -5,7 +5,7 @@ version: "3.8"
 # --------------------------------------------------------------------
 x-app-base: &app-base
   build: .
-  image: automacao-emiteai:1.0
+  image: automacao-emiteai-manifestos:1.0
   restart: unless-stopped
   depends_on:
     redis:
@@ -21,7 +21,7 @@ x-app-base: &app-base
     - GOOGLE_APPLICATION_CREDENTIALS=/app/dados/credentials.json
 
   networks:
-    - rede-redis
+    - rede-redis-manifestos
 
 services:
   # --------------------------------------------------------------------
@@ -29,7 +29,7 @@ services:
   # --------------------------------------------------------------------
   poller:
     <<: *app-base 
-    container_name: poller
+    container_name: poller-manifestos
     command: python poller.py
 
   # --------------------------------------------------------------------
@@ -37,7 +37,7 @@ services:
   # --------------------------------------------------------------------
   writer:
     <<: *app-base 
-    container_name: writer
+    container_name: writer-manifestos
     command: python writer.py
 
   # --------------------------------------------------------------------
@@ -45,7 +45,7 @@ services:
   # --------------------------------------------------------------------
   rpa-workers:
     <<: *app-base 
-    container_name: rpa_workers
+    container_name: rpa_workers-manifestos
     command: python main.py
     
     shm_size: '2gb' 
@@ -55,12 +55,12 @@ services:
   # --------------------------------------------------------------------
   redis:
     image: redis:7.2-alpine
-    container_name: redis-emiteai
+    container_name: redis-emiteai-manifestos
     restart: unless-stopped
     volumes:
-      - redis_data:/data
+      - redis_data_manifestos:/data
     networks:
-      - rede-redis
+      - rede-redis-manifestos
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
       interval: 10s
@@ -69,12 +69,12 @@ services:
       start_period: 10s
 
 volumes:
-  redis_data:
+  redis_data_manifestos:
     driver: local
 # --------------------------------------------------------------------
 # REDE
 # --------------------------------------------------------------------
 networks:
-  rede-redis:
+  rede-redis-manifestos:
     driver: bridge
 

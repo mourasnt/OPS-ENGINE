@@ -441,17 +441,19 @@ class ThreadPoolManager:
         self.jobs_per_thread_ratio = thread_pool_cfg.get("jobs_per_thread_ratio", 50)
         
         # Dicionário para rastrear threads ativas por tipo
-        # {"conferencia": [t1, t2, ...], "emissao": [t3, t4, ...]}
+        # {"conferencia": [t1, t2, ...], "emissao": [t3, t4, ...], "manifesto": [t5, ...]}
         self.threads: Dict[str, list] = {
             "conferencia": [],
-            "emissao": []
+            "emissao": [],
+            "manifesto": []
         }
         
         # Dicionário para rastrear threads marcadas para morte por tipo
-        # {"conferencia": set([t1, t2]), "emissao": set([t3])}
+        # {"conferencia": set([t1, t2]), "emissao": set([t3]), "manifesto": set([t4])}
         self.__threads_marked_to_die: Dict[str, set] = {
             "conferencia": set(),
-            "emissao": set()
+            "emissao": set(),
+            "manifesto": set()
         }
         
         # Lock para operações thread-safe
@@ -573,6 +575,10 @@ class ThreadPoolManager:
                         "emissao",
                         len([t for t in self.threads["emissao"] if t.is_alive()])
                     )
+                    self.status_display.atualizar_threads(
+                        "manifesto",
+                        len([t for t in self.threads["manifesto"] if t.is_alive()])
+                    )
             except Exception as e:
                 logger.error(f"Erro ao atualizar status display: {e}")
     
@@ -581,17 +587,19 @@ class ThreadPoolManager:
         # Importa aqui para evitar imports circulares
         from workers.fluxo_conferencia import fluxo_conferencia_worker
         from workers.fluxo_verificar_emissao import fluxo_verificar_emissao_worker
-        
+        from workers.fluxo_encerrar_manifesto import fluxo_encerrar_manifesto_worker
+
         worker_map = {
             "conferencia": fluxo_conferencia_worker,
             "emissao": fluxo_verificar_emissao_worker,
+            "manifesto": fluxo_encerrar_manifesto_worker,
         }
-        
+
         worker_func = worker_map.get(tipo_job)
         if not worker_func:
             logger.error(f"Worker desconhecido: {tipo_job}")
             return None
-        
+
         thread = threading.Thread(
             target=self.ejecutor_function,
             args=(nome_worker, worker_func, self.config),
@@ -608,17 +616,14 @@ class ThreadPoolManager:
         - Se jobs diminuem: finaliza threads em excesso graciosamente
         """
         with self.lock:
-            for tipo_job in ["conferencia", "emissao"]:
+            for tipo_job in ["conferencia", "emissao", "manifesto"]:
                 threads_atuais = len(self.threads[tipo_job])
                 threads_necessarias = self.calcular_threads_necessarias(tipo_job)
-                
                 # Limpa threads mortas
                 self.threads[tipo_job] = [t for t in self.threads[tipo_job] if t.is_alive()]
                 threads_atuais = len(self.threads[tipo_job])
-                
                 fila_key = f"fila:{tipo_job}"
                 jobs_pendentes = self.redis_client.llen(fila_key)
-                
                 if threads_necessarias > threads_atuais:
                     # ESCALAR: Criar novas threads
                     diferenca = threads_necessarias - threads_atuais
@@ -626,13 +631,11 @@ class ThreadPoolManager:
                         f"[ESCALAR] {tipo_job}: {jobs_pendentes} jobs → "
                         f"criando {diferenca} thread(s) (total: {threads_atuais} → {threads_necessarias})"
                     )
-                    
                     for i in range(diferenca):
                         try:
                             thread_num = threads_atuais + i + 1
                             nome_worker = f"{tipo_job}_worker_{thread_num}"
                             nova_thread = self.criar_thread_worker(tipo_job, nome_worker)
-                            
                             if nova_thread:
                                 nova_thread.start()
                                 self.threads[tipo_job].append(nova_thread)
@@ -642,7 +645,6 @@ class ThreadPoolManager:
                                 )
                         except Exception as e:
                             logger.error(f"Erro ao criar thread de {tipo_job}: {e}")
-                
                 elif threads_necessarias < threads_atuais:
                     # DOWNSCALE: Marcar threads excedentes para morte graceful
                     diferenca = threads_atuais - threads_necessarias
@@ -651,7 +653,6 @@ class ThreadPoolManager:
                         f"marcando {diferenca} thread(s) para morrer (total: {threads_atuais} → {threads_necessarias})"
                     )
                     self._matar_threads_excedentes(tipo_job)
-                
                 else:
                     # Sem mudança
                     if threads_atuais > 0:
@@ -659,7 +660,6 @@ class ThreadPoolManager:
                             f"[EQUILIBRIO] {tipo_job}: {jobs_pendentes} jobs → "
                             f"{threads_atuais} thread(s) ativa(s). Sem mudanças."
                         )
-        
         # Atualizar display de status após rebalanceamento
         self._atualizar_status_display()
     
@@ -689,21 +689,18 @@ class ThreadPoolManager:
     def iniciar(self):
         """Inicia o gerenciador de thread pool."""
         logger.info("Iniciando ThreadPoolManager...")
-        
         # Cria threads iniciais (SEMPRE 1 de cada tipo, independente de jobs)
         with self.lock:
-            for tipo_job in ["conferencia", "emissao"]:
+            for tipo_job in ["conferencia", "emissao", "manifesto"]:
                 try:
                     nome_worker = f"{tipo_job}_worker_1"
                     nova_thread = self.criar_thread_worker(tipo_job, nome_worker)
-                    
                     if nova_thread:
                         nova_thread.start()
                         self.threads[tipo_job].append(nova_thread)
                         logger.success(f"Thread inicial '{nova_thread.name}' iniciada.")
                 except Exception as e:
                     logger.error(f"Erro ao criar thread inicial de {tipo_job}: {e}")
-        
         # Inicia thread de monitoramento
         thread_monitor = threading.Thread(
             target=self.monitorar_rebalanceamento,
@@ -717,21 +714,17 @@ class ThreadPoolManager:
         """
         Monitora threads de workers e recria as que morreram inesperadamente.
         Também verifica kill signals do Watchdog e cria threads de reposição.
-        
         IMPORTANTE: Threads mortas por downscaling intencional NÃO são recriadas.
         """
         logger.info("Monitorando threads de workers...")
-        
         while self.running:
             # Verificar kill signals pendentes e criar threads de reposição
             self._processar_kill_signals()
-            
             with self.lock:
-                for tipo_job in ["conferencia", "emissao"]:
+                for tipo_job in ["conferencia", "emissao", "manifesto"]:
                     # Separar threads vivas de mortas
                     threads_vivas = []
                     threads_mortas_inesperadamente = []
-                    
                     for t in self.threads[tipo_job]:
                         if t.is_alive():
                             threads_vivas.append(t)
@@ -746,7 +739,6 @@ class ThreadPoolManager:
                             else:
                                 # Morte inesperada (crash) - precisa ser recriada
                                 threads_mortas_inesperadamente.append(t)
-                    
                     # Recriar apenas threads que morreram inesperadamente
                     if threads_mortas_inesperadamente:
                         logger.warning(
@@ -763,47 +755,38 @@ class ThreadPoolManager:
                                     logger.success(f"Thread de recuperação '{nova_thread.name}' iniciada.")
                             except Exception as e:
                                 logger.error(f"Erro ao recriar thread de {tipo_job}: {e}")
-                    
                     self.threads[tipo_job] = threads_vivas
-                    
                     # Verifica se precisa criar mais threads por falta
                     threads_atuais = len(threads_vivas)
                     fila_key = f"fila:{tipo_job}"
-                    
                     try:
                         jobs_pendentes = self.redis_client.llen(fila_key)
-                        
                         # Se tem jobs mas 0 threads, cria pelo menos 1
                         if threads_atuais == 0 and jobs_pendentes > 0:
                             logger.info(
                                 f"[RECRIAR] {tipo_job}: 0 threads mas {jobs_pendentes} jobs. "
                                 f"Criando thread de recuperação..."
                             )
-                            
                             nome_worker = f"{tipo_job}_worker_recovery_{int(time.time())}"
                             nova_thread = self.criar_thread_worker(tipo_job, nome_worker)
-                            
                             if nova_thread:
                                 nova_thread.start()
                                 self.threads[tipo_job].append(nova_thread)
                                 logger.success(f"Thread de recuperação '{nova_thread.name}' iniciada.")
-                                
                     except Exception as e:
                         logger.error(f"Erro ao verificar fila {tipo_job}: {e}")
-            
             # Conta total de threads vivas
             threads_total = sum(
                 1 for threads_list in self.threads.values()
                 for thread in threads_list
                 if thread.is_alive()
             )
-            
             if threads_total == 0:
                 # Verifica se realmente não há jobs antes de sair
                 jobs_conferencia = self.redis_client.llen("fila:conferencia")
                 jobs_emissao = self.redis_client.llen("fila:emissao")
-                
-                if jobs_conferencia == 0 and jobs_emissao == 0:
+                jobs_manifesto = self.redis_client.llen("fila:manifesto")
+                if jobs_conferencia == 0 and jobs_emissao == 0 and jobs_manifesto == 0:
                     logger.info(
                         "Todas as threads terminaram e não há jobs pendentes. "
                         "Sistema entrando em modo de espera..."
@@ -811,43 +794,40 @@ class ThreadPoolManager:
                 else:
                     logger.warning(
                         f"Threads morreram com jobs pendentes! "
-                        f"Conferência: {jobs_conferencia}, Emissão: {jobs_emissao}. "
+                        f"Conferência: {jobs_conferencia}, Emissão: {jobs_emissao}, Manifesto: {jobs_manifesto}. "
                         f"Aguardando rebalanceamento..."
                     )
-            
             logger.debug(f"{threads_total} thread(s) ativa(s)...")
             time.sleep(10)
     
     def _processar_kill_signals(self):
         """
         Verifica kill signals do Watchdog e cria threads de reposição.
-        
         Quando o Watchdog detecta um job travado, ele envia um kill signal.
         Esta função lê esses sinais e cria novas threads para substituir as travadas.
         """
         import json
         try:
             kill_signals = self.redis_client.smembers("watchdog:kill_workers")
-            
             if not kill_signals:
                 return
-            
             for signal_json in kill_signals:
                 try:
                     signal = json.loads(signal_json)
                     tipo_job = signal.get("tipo", "conferencia")
                     job_id = signal.get("job_id", "desconhecido")
-                    
+                    if tipo_job not in ["conferencia", "emissao", "manifesto"]:
+                        logger.error(f"Kill signal recebido para tipo desconhecido: {tipo_job}. Ignorando.")
+                        self.redis_client.srem("watchdog:kill_workers", signal_json)
+                        continue
                     logger.warning(
                         f"[KILL SIGNAL] Detectado travamento do job '{job_id}' ({tipo_job}). "
                         f"Criando thread de substituição..."
                     )
-                    
                     # Criar uma nova thread imediatamente (não espera a antiga morrer)
                     with self.lock:
                         nome_worker = f"{tipo_job}_worker_replace_{int(time.time())}"
                         nova_thread = self.criar_thread_worker(tipo_job, nome_worker)
-                        
                         if nova_thread:
                             nova_thread.start()
                             self.threads[tipo_job].append(nova_thread)
@@ -855,16 +835,13 @@ class ThreadPoolManager:
                                 f"Thread de substituição '{nova_thread.name}' iniciada para {tipo_job}. "
                                 f"Thread travada será descartada quando morrer."
                             )
-                    
                     # Remove o kill signal após processamento
                     self.redis_client.srem("watchdog:kill_workers", signal_json)
-                    
                 except json.JSONDecodeError:
                     # Remove signals inválidos
                     self.redis_client.srem("watchdog:kill_workers", signal_json)
                 except Exception as e:
                     logger.error(f"Erro ao processar kill signal: {e}")
-                    
         except Exception as e:
             logger.error(f"Erro ao verificar kill signals: {e}")
     

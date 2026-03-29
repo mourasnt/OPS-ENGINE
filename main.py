@@ -38,8 +38,10 @@ except ImportError:
     logger.critical("Não foi possível encontrar 'utils.status_display.StatusDisplay'.")
     exit(1)
 
+
 from workers.fluxo_conferencia import fluxo_conferencia_worker
 from workers.fluxo_verificar_emissao import fluxo_verificar_emissao_worker
+from workers.fluxo_encerrar_manifesto import fluxo_encerrar_manifesto_worker
 from fluxos.fluxo_login import fluxo_login
 
 
@@ -188,6 +190,7 @@ def main():
         status_display.iniciar()
         logger.success("Status display iniciado")
         
+
         # Cria o gerenciador de thread pool dinâmico
         pool_manager = ThreadPoolManager(
             redis_client=redis_client,
@@ -196,17 +199,25 @@ def main():
             usuario=USUARIO,
             senha=SENHA,
             rebalance_interval=60,  # Verifica a cada 60 segundos
-            max_threads_per_type=10,  # Máximo 10 threads por tipo (conferência/emissão)
+            max_threads_per_type=10,  # Máximo 10 threads por tipo (conferência/emissão/manifesto)
             max_total_threads=20,  # Máximo 20 threads no total
             status_display=status_display,  # Passar o status display
         )
-        
+
         # Adiciona pool_manager ao config para os workers acessarem
         config['thread_pool_manager'] = pool_manager
-        
+
+        # Inicia os workers em threads separadas
+        threads = []
+        threads.append(threading.Thread(target=executar_fluxo, args=("conferencia", fluxo_conferencia_worker, config), daemon=True))
+        threads.append(threading.Thread(target=executar_fluxo, args=("emissao", fluxo_verificar_emissao_worker, config), daemon=True))
+        threads.append(threading.Thread(target=executar_fluxo, args=("manifesto", fluxo_encerrar_manifesto_worker, config), daemon=True))
+        for t in threads:
+            t.start()
+
         # Inicia o gerenciador
         pool_manager.iniciar()
-        
+
         # Loop de monitoramento principal
         logger.info("ThreadPoolManager em execução. Pressione Ctrl+C para parar.")
         pool_manager.aguardar_encerramento()

@@ -58,9 +58,76 @@ def escolher_opcao_mais_parecida(page: Page, texto_busca: str):
         logger.warning(f"[Worker Conferência] Nenhuma opção correspondente encontrada para '{texto_busca_norm}' (Score < 30).")
         return False
 
-# ==============================================================================
-# ETAPA PRINCIPAL: FUNÇÃO DE CONFERÊNCIA DA CARGA
-# ==============================================================================
+
+def clicar_option(page: Page, name: str, exact: bool = True, timeout: int = 7000, max_attempts: int = 6) -> bool:
+    """Tenta clicar em uma opção de dropdown com retries e backoff para evitar interceptação de pointer."""
+    for attempt in range(1, max_attempts + 1):
+        option_locator = page.get_by_role("option", name=name, exact=exact)
+        try:
+            expect(option_locator).to_be_visible(timeout=min(2000, timeout))
+            option_locator.click(timeout=timeout)
+            return True
+        except Exception as exc:
+            if attempt == max_attempts:
+                logger.error(
+                    f"[Worker Conferência] Falha ao clicar na opção '{name}' após {max_attempts} tentativas: {exc}"
+                )
+                return False
+            wait_ms = 120 * attempt
+            logger.warning(
+                f"[Worker Conferência] Tentativa {attempt}/{max_attempts} para clicar em opção '{name}' falhou: {exc}. Aguardando {wait_ms}ms e tentando de novo."
+            )
+            page.wait_for_timeout(wait_ms)
+            # garante que a dropdown ainda está aberta
+            try:
+                page.wait_for_selector("[role='option']", timeout=2000)
+            except TimeoutError:
+                logger.debug(f"[Worker Conferência] Dropdown fechou ao tentar selecionar '{name}'.")
+                return False
+    return False
+
+
+def selecionar_mui_select(page: Page, select_selector: str, option_name: str, timeout: int = 7000) -> bool:
+    """Clicka no controle MUI select e depois seleciona uma opção via clicar_option."""
+    try:
+        page.locator(select_selector).click(timeout=timeout)
+    except Exception as exc:
+        logger.warning(f"[Worker Conferência] Falha no clique initial do seletor '{select_selector}': {exc}")
+        try:
+            page.eval_on_selector(select_selector, "el => el.click()")
+        except Exception as exc2:
+            logger.error(f"[Worker Conferência] Falha ao forçar clique no seletor '{select_selector}': {exc2}")
+            return False
+        page.wait_for_timeout(150)
+
+    if not clicar_option(page, option_name, exact=True, timeout=timeout):
+        logger.error(f"[Worker Conferência] Não conseguiu selecionar '{option_name}' no select '{select_selector}'.")
+        return False
+
+    return True
+
+
+def selecionar_mui_select_por_label(page: Page, label_text: str, option_name: str, timeout: int = 7000) -> bool:
+    """Encontra um Select do MUI pela Label visível e seleciona a opção."""
+    try:
+        # Encontra o "bloco" do campo que contém a label exata
+        # e pega o elemento clicável (role="button") dentro desse bloco
+        dropdown = page.locator(".MuiFormControl-root").filter(has_text=re.compile(fr"^{label_text}")).get_by_role("button")
+        
+        dropdown.click(timeout=timeout)
+        page.wait_for_timeout(200) # Pequena pausa para a animação do MUI
+        
+    except Exception as exc:
+        logger.warning(f"[Worker Conferência] Falha ao abrir o dropdown da label '{label_text}': {exc}")
+        return False
+
+    # Usa a sua função robusta para clicar na opção da lista
+    if not clicar_option(page, option_name, exact=True, timeout=timeout):
+        logger.error(f"[Worker Conferência] Não conseguiu selecionar '{option_name}' na label '{label_text}'.")
+        return False
+
+    return True
+
 
 def conferir_lt(page: Page, carga: Carga) -> dict:
     """
@@ -149,7 +216,6 @@ def conferir_lt(page: Page, carga: Carga) -> dict:
                     return cancelar_e_sair(campo="Placa Secundária", valor=carga.placa2)
 
         # Expedidor
-        # Este 'try' agora captura o 'raise ValueError' se as 2 tentativas falharem
         with TimeoutDetector("Preencher Expedidor", max_seconds=20, job_id=carga.numero_lt):
             try:
                 expedidor_input = page.get_by_role("textbox", name="Expedidor")
@@ -166,7 +232,6 @@ def conferir_lt(page: Page, carga: Carga) -> dict:
                 return cancelar_e_sair(campo="Expedidor", valor=carga.origem)
 
         # Tomador
-        # Este 'try' agora captura o 'raise ValueError' se as 2 tentativas falharem
         with TimeoutDetector("Preencher Tomador", max_seconds=20, job_id=carga.numero_lt):
             try:
                 tomador_input = page.get_by_role("textbox", name="Tomador")
@@ -199,7 +264,6 @@ def conferir_lt(page: Page, carga: Carga) -> dict:
                 return cancelar_e_sair(campo="Recebedor", valor=carga.destino)
         
         # Motorista
-        # Motorista
         with TimeoutDetector("Preencher Motorista", max_seconds=15, job_id=carga.numero_lt):
             try:
                 if not carga.motorista: raise ValueError("Motorista não fornecido.")
@@ -212,15 +276,15 @@ def conferir_lt(page: Page, carga: Carga) -> dict:
         
         # --- (Restante do preenchimento do formulário) ---
         with TimeoutDetector("Preencher campos restantes", max_seconds=25, job_id=carga.numero_lt):
-            page.locator(".MuiInputBase-root.MuiOutlinedInput-root.Mui-error > .MuiSelect-root").first.click()
-            try:
-                page.get_by_role("option", name="Redespacho Intermediário").click()
-            except TimeoutError:
+            
+            # ATUALIZADO: Usando label para Tipos de CT-e
+            if not selecionar_mui_select_por_label(page, "Tipos de CT-e a Gerar\*", "Redespacho Intermediário", timeout=8000):
                 logger.error(f"[Worker Conferência] Opção 'Redespacho Intermediário' não encontrada - LT {carga.numero_lt}.")
 
-            page.locator("div:nth-child(2) > .MuiFormControl-root > .MuiInputBase-root > .MuiSelect-root").click()
-            page.get_by_role("option", name="Remetente").click()
-            
+            # ATUALIZADO: Usando label para Tipo de Tomador
+            if not selecionar_mui_select_por_label(page, "Tipo de Tomador", "Remetente", timeout=8000):
+                logger.error(f"[Worker Conferência] Opção 'Remetente' não encontrada - LT {carga.numero_lt}.")
+
             total = carga.frete + carga.pedagio
             valor_ciot = total - 100
             valor_formatado = f"{total:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
@@ -238,24 +302,28 @@ def conferir_lt(page: Page, carga: Carga) -> dict:
             
             page.get_by_role("checkbox", name="Emitir Averbação").uncheck()
 
-            page.locator("div:nth-child(11) > .MuiFormControl-root > .MuiInputBase-root > .MuiSelect-root").click()
+            # ATUALIZADO: Usando label para Geração MDF-e
             opcao_gerar = "Gera vinculado à CT-e emitido" if carga.status not in ["ENTREGA FINALIZADA", "AGUARDANDO DESCARGA"] else "Não gera"
-            page.get_by_role("option", name=opcao_gerar).click()
-            
+            if not selecionar_mui_select_por_label(page, "Geração MDF-e", opcao_gerar, timeout=8000):
+                logger.error(f"[Worker Conferência] Opção '{opcao_gerar}' não encontrada - LT {carga.numero_lt}.")
+
             page.get_by_role("textbox", name="Número DT").fill(carga.numero_lt)
-            
+
             page.get_by_role("button", name="Line Haul").click()
-            page.get_by_role("option", name="Line Haul").click()
+            if not clicar_option(page, "Line Haul", exact=True, timeout=8000):
+                logger.error(f"[Worker Conferência] Opção 'Line Haul' não encontrada - LT {carga.numero_lt}.")
 
             transportadora_input = page.get_by_role("textbox", name="Transportadora*")
             transportadora_input.clear()
             transportadora_input.type("3ZX", delay=50)
-            page.get_by_role("option", name="34.790.798/0001-34 - 3ZX SP").click()
+            if not clicar_option(page, "34.790.798/0001-34 - 3ZX SP", exact=True, timeout=12000):
+                logger.error(f"[Worker Conferência] Opção transportadora 3ZX não encontrada - LT {carga.numero_lt}.")
 
             tipo_veiculo_input = page.get_by_role("textbox", name="Tipo de Veículo")
             tipo_veiculo_input.clear()
             tipo_veiculo_input.type(carga.perfil, delay=50)
-            page.get_by_role("option", name=carga.perfil, exact=True).click()
+            if not clicar_option(page, carga.perfil, exact=True, timeout=12000):
+                logger.error(f"[Worker Conferência] Opção de perfil de veículo '{carga.perfil}' não encontrada - LT {carga.numero_lt}.")
         # --- (Fim do preenchimento) ---
 
         # ETAPA 5: Finalização
