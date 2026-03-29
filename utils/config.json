@@ -18,8 +18,6 @@
     "db_filas": 3,
     "db_state": 4,
     "db_bases": 5,
-    "host": "redis-emiteai-manifestos",
-    "port": 6379,
     "results_queue": "fila:resultados",
     "conference_queue": "fila:conferencia",
     "emission_queue": "fila:emissao",
