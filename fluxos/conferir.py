@@ -278,7 +278,7 @@ def conferir_lt(page: Page, carga: Carga) -> dict:
         with TimeoutDetector("Preencher campos restantes", max_seconds=25, job_id=carga.numero_lt):
             
             # ATUALIZADO: Usando label para Tipos de CT-e
-            if not selecionar_mui_select_por_label(page, "Tipos de CT-e a Gerar\*", "Redespacho Intermediário", timeout=8000):
+            if not selecionar_mui_select_por_label(page, "Tipos de CT-e a Gerar", "Redespacho Intermediário", timeout=8000):
                 logger.error(f"[Worker Conferência] Opção 'Redespacho Intermediário' não encontrada - LT {carga.numero_lt}.")
 
             # ATUALIZADO: Usando label para Tipo de Tomador
