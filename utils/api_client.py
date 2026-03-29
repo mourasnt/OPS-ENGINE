@@ -1,7 +1,6 @@
 import urllib3
 import requests
 from typing import Any, Dict
-from tenacity import retry, stop_after_attempt, wait_exponential, retry_if_exception
 from loguru import logger
 
 # 1. Configuração global (roda apenas uma vez)
@@ -35,11 +34,6 @@ class RasterService:
 
 
 class PreSMClient(RasterService):
-    @retry(
-        stop=stop_after_attempt(3), 
-        wait=wait_exponential(multiplier=1, min=1, max=10),
-        retry=retry_if_exception(is_transient_error) # Aplicando a regra inteligente
-    )
     def criar_lote(self, payload: Any) -> requests.Response:
         url = f"{self.base_url}/pre-sm/criar"
         logger.debug(f'📤 POST {url}')
@@ -51,12 +45,6 @@ class PreSMClient(RasterService):
     
 
 class SMClient(RasterService):
-    @retry(
-        stop=stop_after_attempt(3), 
-        wait=wait_exponential(multiplier=1, min=1, max=10),
-        retry=retry_if_exception(is_transient_error)
-    )
-    # Ajustei o nome para 'efetivar_lote' para não confundir com o de cima
     def efetivar_lote(self, payload: Any) -> requests.Response:
         url = f"{self.base_url}/pre-sm/efetivar"
         logger.debug(f'📤 POST {url}')
