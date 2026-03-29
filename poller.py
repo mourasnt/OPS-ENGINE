@@ -244,11 +244,11 @@ def iniciar_poller(config):
     r_port = redis_cfg.get('port')
     
     # DB para filas (Jobs)
-    r_db_filas = redis_cfg.get('db', 0)
+    r_db_filas = redis_cfg.get('db_filas')
     # DB para estado do CDC
-    r_db_estado = redis_cfg.get('db_state', 1) 
+    r_db_estado = redis_cfg.get('db_state') 
     # DB para Cache de Bases (SM)
-    r_db_bases = redis_cfg.get('db_bases', 2)
+    r_db_bases = redis_cfg.get('db_bases')
 
     q_conferencia = redis_cfg.get('conference_queue')
     q_emissao = redis_cfg.get('emission_queue')

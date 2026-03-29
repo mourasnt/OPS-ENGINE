@@ -5,7 +5,7 @@ version: "3.8"
 # --------------------------------------------------------------------
 x-app-base: &app-base
   build: .
-  image: automacao-emiteai-manifestos:1.0
+  image: ops-engine-app:1.0
   restart: unless-stopped
   depends_on:
     redis:
@@ -14,53 +14,53 @@ x-app-base: &app-base
     - ./logs:/app/logs
     - ./utils/config.json:/app/utils/config.json
     - ./dados/credentials.json:/app/dados/credentials.json
-
   environment:
     - RPA_USUARIO=${RPA_USUARIO}
     - RPA_SENHA=${RPA_SENHA}
-    - GOOGLE_APPLICATION_CREDENTIALS=/app/dados/credentials.json
-
+    - GOOGLE_APPLICATION_CREDENTIALS={GOOGLE_APPLICATION_CREDENTIALS}
+    - REDIS_HOST={REDIS_HOST}
+    - REDIS_PORT={REDIS_PORT}
   networks:
-    - rede-redis-manifestos
+    - ops-engine-network
 
 services:
   # --------------------------------------------------------------------
-  # SERVIÇO 1: O POLLER (Produtor - Lê Planilha)
+  # SERVIÇO 1: O POLLER (O Cérebro - Lê Planilha, avalia regras e cria filas)
   # --------------------------------------------------------------------
   poller:
     <<: *app-base 
-    container_name: poller-manifestos
+    container_name: ops-engine-poller
     command: python poller.py
 
   # --------------------------------------------------------------------
-  # SERVIÇO 2: O WRITER (Coletor - Escreve na Planilha)
+  # SERVIÇO 2: O WRITER (Único com permissão de escrita)
   # --------------------------------------------------------------------
   writer:
     <<: *app-base 
-    container_name: writer-manifestos
+    container_name: ops-engine-writer
     command: python writer.py
 
   # --------------------------------------------------------------------
-  # SERVIÇO 3: OS WORKERS DE RPA (Consumidores - Rodam Playwright)
+  # SERVIÇO 3: OS WORKERS (Os Músculos - Web/Playwright e APIs de Risco)
   # --------------------------------------------------------------------
-  rpa-workers:
+  workers:
     <<: *app-base 
-    container_name: rpa_workers-manifestos
+    container_name: ops-engine-workers
     command: python main.py
-    
+    # Necessário para o Playwright não estourar a memória RAM compartilhada do container
     shm_size: '2gb' 
 
   # --------------------------------------------------------------------
-  # SERVIÇO 4: O REDIS
+  # SERVIÇO 4: O REDIS (Mensageria e Banco de Estado/Cache)
   # --------------------------------------------------------------------
   redis:
     image: redis:7.2-alpine
-    container_name: redis-emiteai-manifestos
+    container_name: ops-engine-redis
     restart: unless-stopped
     volumes:
-      - redis_data_manifestos:/data
+      - ops-engine-redis-data:/data
     networks:
-      - rede-redis-manifestos
+      - ops-engine-network
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
       interval: 10s
@@ -69,12 +69,14 @@ services:
       start_period: 10s
 
 volumes:
-  redis_data_manifestos:
+  ops-engine-redis-data:
     driver: local
+
 # --------------------------------------------------------------------
-# REDE
+# REDES
 # --------------------------------------------------------------------
 networks:
-  rede-redis-manifestos:
+  ops-engine-network:
     driver: bridge
-
+  raster-api_rede-raster-services:
+    external: true

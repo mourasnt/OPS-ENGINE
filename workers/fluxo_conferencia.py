@@ -66,9 +66,9 @@ def fluxo_conferencia_worker(page: Page, config: dict):
     SELETOR_CHAVE_CONSULTA = 'button:has-text("Filtrar")'
     
     redis_cfg = config.get('redis_settings', {})
-    r_host = redis_cfg.get('host')
-    r_port = redis_cfg.get('port')
-    r_db = redis_cfg.get('db')
+    r_host = os.environ.get('REDIS_HOST')
+    r_port = int(os.environ.get('REDIS_PORT'))
+    r_db_filas = redis_cfg.get('db_filas')
     q_conferencia = redis_cfg.get('conference_queue')
     s_controle = redis_cfg.get('control_set')
     if not s_controle:
@@ -77,7 +77,7 @@ def fluxo_conferencia_worker(page: Page, config: dict):
     
     try:
         from utils.redis_client import get_redis
-        r = get_redis(host=r_host, port=r_port, db=r_db)
+        r = get_redis(host=r_host, port=r_port, db=r_db_filas)
         logger.info(f"[Worker Conferência] Conectado ao Redis em {r_host}:{r_port}. Ouvindo a fila '{q_conferencia}'")
     except Exception as e:
         logger.critical(f"[Worker Conferência] Não foi possível conectar ao Redis: {e}. Worker encerrando.")

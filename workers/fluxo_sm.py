@@ -17,42 +17,31 @@ class WorkerSM:
         Quem verifica pendências agora é o Poller.
         """
         self.config_dict = config_dict
-        
-        # --- Configurações do Redis ---
+
         redis_cfg = config_dict.get('redis_settings', {})
-        r_host = os.environ.get('REDIS_HOST', redis_cfg.get('host', 'localhost'))
-        r_port = int(os.environ.get('REDIS_PORT', redis_cfg.get('port', 6379)))
-        
-        # DB 3 (Padrão): Filas de trabalho e comunicação com o Writer
-        r_db_filas = int(os.environ.get('REDIS_DB', redis_cfg.get('db', 3)))
-        # DB 5 (Bases): Cache alimentado pelo Poller
-        r_db_bases = redis_cfg.get('db_bases', 5) 
+        r_host = os.environ.get('REDIS_HOST')
+        r_port = int(os.environ.get('REDIS_PORT'))
+        r_db_filas = redis_cfg.get('db_filas')
+        r_db_bases = redis_cfg.get('db_bases') 
         
         self.r_filas = get_redis(host=r_host, port=r_port, db=r_db_filas)
         self.r_bases = get_redis(host=r_host, port=r_port, db=r_db_bases)
 
-        # Filas extraídas do config.json
         self.q_pre_sm = redis_cfg.get('pre_sm_queue', 'fila:pre_sm')
         self.q_efetivacao = redis_cfg.get('efetivacao_queue', 'fila:efetivacao_sm')
         self.fila_resultados = redis_cfg.get('results_queue', 'fila:resultados') 
 
-        # --- Clientes de API ---
         sm_cfg = config_dict.get('sm_settings', {})
         api_base_url = os.environ.get('API_BASE_URL', sm_cfg.get('api_base_url', ''))
         
         self.api = PreSMClient(api_base_url)
         self.api_efetivacao = SMClient(api_base_url)
         
-        # Histórico de Jobs 
         try:
             self.history = JobHistory(redis_client=self.r_filas)
         except TypeError:
             self.history = JobHistory()
 
-
-    # -------------------------
-    # Comunicação com o Writer
-    # -------------------------
     def enviar_update_writer(self, rownum: int, coluna: str, valor: Any):
         """Envia um job para a fila do Writer atualizar a planilha (usado em erros imediatos)."""
         if not rownum:
@@ -70,10 +59,6 @@ class WorkerSM:
         self.r_filas.rpush(self.fila_resultados, json.dumps(job_writer))
         logger.debug(f"Enviado para Writer: Linha {rownum} | Coluna '{coluna}' | Valor '{valor}'")
 
-
-    # -------------------------
-    # Helpers Reutilizados
-    # -------------------------
     def _parse_datetime(self, s: str) -> Optional[datetime]:
         if not s: return None
         s = s.strip()
@@ -124,10 +109,6 @@ class WorkerSM:
                 
         return {}
 
-
-    # -------------------------
-    # Construtores de Payloads
-    # -------------------------
     def build_payload_pre_sm(self, row: Dict[str, Any]):
         id_3zx = row.get("ID 3ZX")
         rownum = row.get("original_row_number")
@@ -182,10 +163,6 @@ class WorkerSM:
             "PreSM": int(codigo_pre_sm) if str(codigo_pre_sm).isdigit() else codigo_pre_sm
         }
 
-
-    # -------------------------
-    # Processadores Unitários 
-    # -------------------------
     def processar_single_pre_sm(self, row: Dict[str, Any]):
         logger.info(f"[PRÉ-SM] Processando Job para ID: {row.get('ID 3ZX')}")
         payload = self.build_payload_pre_sm(row)
@@ -216,11 +193,9 @@ class WorkerSM:
         job_type = job.get("type", "criar_pre_sm" if target_col == "PRÉ SM" else "efetivar_sm")
 
         if job.get("status") == "accepted" or job.get("sucesso"):
-            # Tudo certo. Anota no histórico que tá processando. O Poller resolve o resto.
             self.history.add_job(id_3zx, job_id, rownum, job_type)
             logger.info(f"Job {job_id} ({job_type}) enviado para API com sucesso. Aguardando Poller verificar status.")
         else:
-            # Erro síncrono (ex: CPF inválido retornado na hora). Anota erro e manda o Writer preencher.
             err = job.get("erro") or str(job)
             self.enviar_update_writer(rownum, target_col, f"ERRO: {err}")
             self.history.add_job(id_3zx, job_id, rownum, job_type)
@@ -228,9 +203,6 @@ class WorkerSM:
             logger.warning(f"Job {job_type} recusado imediatamente pela API: {err}")
 
 
-    # -------------------------
-    # Loop Principal (Consumo da Fila)
-    # -------------------------
     def iniciar_consumo(self):
         logger.info("="*60)
         logger.info(f"Worker API (Músculo) iniciado.")
@@ -239,7 +211,6 @@ class WorkerSM:
 
         while True:
             try:
-                # Ouve filas bloqueando infinitamente (timeout=0) até chegar trabalho.
                 item = self.r_filas.blpop([self.q_pre_sm, self.q_efetivacao], timeout=0)
 
                 if item:
@@ -258,10 +229,6 @@ class WorkerSM:
                 logger.error(f"[WORKER SM] Erro crítico no loop de consumo: {e}")
                 time.sleep(5) 
 
-
-# ===================================================================
-# FUNÇÃO DE ENTRADA EXPORTADA
-# ===================================================================
 def fluxo_sm_worker(config: Dict[str, Any]):
     worker = WorkerSM(config)
     worker.iniciar_consumo()

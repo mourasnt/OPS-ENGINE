@@ -9,7 +9,6 @@ import os
 from loguru import logger
 from playwright.sync_api import Page
 
-# --- HELPERS DE UPDATE E ERRO ---
 def enviar_job_update(r_client: redis.Redis, config: dict, row: int, colunas: list, valores: list):
     try:
         results_queue = config['redis_settings']['results_queue']
@@ -41,16 +40,15 @@ def enviar_job_append_erro(r_client: redis.Redis, config: dict, mdfe: str, campo
     except Exception as e:
         logger.error(f"[Worker Manifesto] Falha ao enviar job APPEND (MDFe {mdfe}) para o Redis: {e}")
 
-# --- WORKER DE ENCERRAMENTO DE MANIFESTO (MDFe) ---
 def fluxo_encerrar_manifesto_worker(page: Page, config: dict):
     import threading
     worker_name = threading.current_thread().name
     logger.info(f"[Worker Manifesto] Iniciando... (Thread: {worker_name})")
 
     redis_cfg = config.get('redis_settings', {})
-    r_host = redis_cfg.get('host')
-    r_port = redis_cfg.get('port')
-    r_db = redis_cfg.get('db')
+    r_host = os.environ.get('REDIS_HOST')
+    r_port = int(os.environ.get('REDIS_PORT'))
+    r_db_filas = redis_cfg.get('db_filas')
     q_manifesto = redis_cfg.get('manifesto_queue')
     s_manifesto = redis_cfg.get('manifesto_set')
     if not q_manifesto or not s_manifesto:
@@ -59,13 +57,12 @@ def fluxo_encerrar_manifesto_worker(page: Page, config: dict):
 
     try:
         from utils.redis_client import get_redis
-        r = get_redis(host=r_host, port=r_port, db=r_db)
+        r = get_redis(host=r_host, port=r_port, db=r_db_filas)
         logger.info(f"[Worker Manifesto] Conectado ao Redis em {r_host}:{r_port}. Ouvindo a fila '{q_manifesto}'")
     except Exception as e:
         logger.critical(f"[Worker Manifesto] Não foi possível conectar ao Redis: {e}. Worker encerrando.")
         return
 
-    # Watchdog e Pool Manager
     watchdog = config.get('watchdog', None)
     pool_manager = config.get('thread_pool_manager', None)
 
@@ -99,12 +96,10 @@ def fluxo_encerrar_manifesto_worker(page: Page, config: dict):
     manifesto_id = None
 
     while True:
-        # Downscaling
         if verificar_deve_morrer():
             logger.warning(f"[Worker Manifesto] 💀 Downscaling detectado. Thread será encerrada.")
             break
 
-        # Kill signal
         if job_atual and verificar_kill_signal(job_atual):
             logger.critical(f"[Worker Manifesto] Encerrando thread por kill signal do Watchdog!")
             break
@@ -125,11 +120,9 @@ def fluxo_encerrar_manifesto_worker(page: Page, config: dict):
             job_atual = manifesto_id
             logger.info(f"[Worker Manifesto] Job recebido: MDFe {mdfe} (Linha {linha_num}). Processando...")
 
-            # Registrar job no watchdog
             if watchdog:
                 watchdog.registrar_job(manifesto_id, worker_id=worker_name, tipo_job="manifesto")
 
-            # --- Lógica principal do job ---
             from utils.manifesto_utils import navegar_e_validar_mdfe
             resultado = navegar_e_validar_mdfe(page, lt)
             if not resultado:
@@ -146,7 +139,6 @@ def fluxo_encerrar_manifesto_worker(page: Page, config: dict):
                 logger.warning(f"[Worker Manifesto] MDFe {mdfe} não está autorizado e nem encerrado (Status: {status_mdfe}). Pulando job.")
                 continue
 
-            # --- Lógica Playwright de encerramento (placeholder) ---
             try:
                 logger.info(f"[Worker Manifesto] (PLACEHOLDER) Encerramento de manifesto para MDFe {mdfe} - implementar Playwright depois.")
                 card_locator = page.locator(".MuiGrid-root.MuiGrid-item.MuiGrid-grid-xs-12.MuiGrid-grid-sm-6").filter(
@@ -166,15 +158,12 @@ def fluxo_encerrar_manifesto_worker(page: Page, config: dict):
             try:
                 opcao_encerrar = page.get_by_role("menuitem", name="Encerrar").first
 
-                # Manda o Playwright esperar até 3 segundos (3000ms) para o botão aparecer/terminar a animação
                 opcao_encerrar.wait_for(state="visible", timeout=3000) 
 
-                # Se chegou até aqui sem dar erro de Timeout, é porque está visível!
                 opcao_encerrar.click()
                 logger.info("Clicou na opção 'Encerrar' com sucesso!")
 
             except Exception as e:
-                # Se passar os 3 segundos e ele não aparecer, cai direto aqui (sem travar o código por 30s)
                 motivo = "A opção 'Encerrar' não está disponível neste menu ou não carregou a tempo."
                 logger.error(f"[MDF-e Encerrar] [LT {lt}] {motivo}")
 
@@ -231,7 +220,6 @@ def fluxo_encerrar_manifesto_worker(page: Page, config: dict):
             time.sleep(5)
             continue
         finally:
-            # Finalizar job no watchdog
             if watchdog and job_atual:
                 watchdog.finalizar_job(job_atual)
             if manifesto_id:

@@ -13,7 +13,6 @@ from fluxos.preencher_cte import preencher_cte
 from fluxos.preencher_mdfe import preencher_mdfe
 from utils.watchdog import TimeoutDetector
 
-# Carrega configurações de timeout
 config_path = os.path.join(os.path.dirname(__file__), "..", "utils", "config.json")
 with open(config_path, "r", encoding="utf-8") as f:
     timeout_config = json.load(f)
@@ -38,29 +37,25 @@ def enviar_job_update(r_client: redis.Redis, config: dict, row: int, colunas: li
     except Exception as e:
         logger.error(f"[Worker Emissão] Falha ao enviar job UPDATE (Linha {row}) para o Redis: {e}")
 
-# --- FLUXO REATORADO COMO WORKER ---
 def fluxo_verificar_emissao_worker(page: Page, config: dict):
     import threading
     worker_name = threading.current_thread().name
     logger.info(f"[Worker Emissão] Iniciando... (Thread: {worker_name})")
     
     redis_cfg = config.get('redis_settings', {})
-    r_host = redis_cfg.get('host')
-    r_port = redis_cfg.get('port')
-    r_db = redis_cfg.get('db')
+    r_host = os.environ.get('REDIS_HOST')
+    r_port = int(os.environ.get('REDIS_PORT'))
+    r_db_filas = redis_cfg.get('db_filas')
     q_emissao = redis_cfg.get('emission_queue')
     s_controle = redis_cfg.get('control_set')
     if not s_controle:
         logger.critical(f"[Worker Emissão] Config 'control_set' não encontrada. O Worker não pode limpar o cadeado!")
         return
     
-    # Extrair watchdog da configuração
     watchdog = config.get('watchdog', None)
     
-    # Obter pool manager do config (se disponível) para verificar downscaling
     pool_manager = config.get('thread_pool_manager', None)
     
-    # Função helper para verificar se a thread deve morrer (downscaling)
     def verificar_deve_morrer() -> bool:
         """Verifica se esta thread foi marcada para morte por downscaling."""
         try:
@@ -72,13 +67,12 @@ def fluxo_verificar_emissao_worker(page: Page, config: dict):
     
     try:
         from utils.redis_client import get_redis
-        r = get_redis(host=r_host, port=r_port, db=r_db)
+        r = get_redis(host=r_host, port=r_port, db=r_db_filas)
         logger.info(f"[Worker Emissão] Conectado ao Redis em {r_host}:{r_port}. Ouvindo a fila '{q_emissao}'")
     except Exception as e:
         logger.critical(f"[Worker Emissão] Não foi possível conectar ao Redis: {e}. Worker encerrando.")
         return
 
-    # Função helper para verificar kill signal
     def verificar_kill_signal(job_id_atual: str) -> bool:
         """Verifica se este job foi sinalizado para morrer pelo watchdog."""
         try:
@@ -98,22 +92,19 @@ def fluxo_verificar_emissao_worker(page: Page, config: dict):
 
     tentativas_reconexao = 0
     max_tentativas_reconexao = 3
-    job_atual = None  # Track current job for kill signal check
+    job_atual = None
 
     while True:
-        numero_lt = None  # Para usar no finally block
+        numero_lt = None
         
-        # Verificar se thread deve morrer por downscaling
         if verificar_deve_morrer():
             logger.warning(f"[Worker Emissão] 💀 Downscaling detectado. Thread será encerrada.")
             break
         
-        # Verificar kill signal para o job atual (se houver)
         if job_atual and verificar_kill_signal(job_atual):
             logger.critical(f"[Worker Emissão] Encerrando thread por kill signal do Watchdog!")
             break
         
-        # 1. ESPERAR POR UM JOB
         try:
             resultado_bruto = r.blpop([q_emissao], timeout=60) 
             
@@ -124,20 +115,17 @@ def fluxo_verificar_emissao_worker(page: Page, config: dict):
             _, job_json = resultado_bruto
             job = json.loads(job_json)
             
-            linha_data = job['data']  # Os dados da linha (dicionário)
-            linha_num = job['row']    # O número da linha
+            linha_data = job['data']
+            linha_num = job['row']
 
             numero_lt = (linha_data.get("N° Carga") or "").strip()
             id = (linha_data.get("ID 3ZX") or "").strip() or f"{numero_lt}-{linha_num}"
             logger.info(f"[Worker Emissão] Job recebido: LT {numero_lt} (Linha {linha_num}). Processando...")
             
-            # Atualizar job atual para verificação de kill signal
             job_atual = numero_lt
             
-            # Reset contador de reconexão após job bem-sucedido
             tentativas_reconexao = 0
             
-            # Registrar job no watchdog (usando nome da thread como worker_id)
             if watchdog:
                 watchdog.registrar_job(numero_lt, worker_id=worker_name, tipo_job="emissao")
 
@@ -154,9 +142,7 @@ def fluxo_verificar_emissao_worker(page: Page, config: dict):
             time.sleep(5)
             continue
 
-        # 2. PROCESSAR O JOB
         try:
-            # --- Extração de Dados do Job (Planilha) ---
             numero_lt = (linha_data.get("N° Carga") or "").strip()
             cte_valor = (linha_data.get("CTE") or "").strip()
             mdfe_valor = (linha_data.get("MDFe") or "").strip()
@@ -170,7 +156,6 @@ def fluxo_verificar_emissao_worker(page: Page, config: dict):
             
             numero_lt = str(numero_lt).strip()
 
-            # --- Validação de "Já Preenchido" (Sua lógica original) ---
             cte_preenchido = pd.notna(cte_valor) and str(cte_valor).strip() != ""
             mdfe_preenchido = pd.notna(mdfe_valor) and str(mdfe_valor).strip() != ""
             data_agora = datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')
@@ -181,7 +166,7 @@ def fluxo_verificar_emissao_worker(page: Page, config: dict):
                     enviar_job_update(r, config, linha_num, ["Status de emissão"], ["Nota de Serviço"])
                 else:
                     enviar_job_update(r, config, linha_num, ["Status de emissão"], ["Finalizado"])
-                continue # Pega o próximo job
+                continue
             
 
             logger.info(f"[Worker Emissão] Iniciando RPA para LT: {numero_lt} (Linha {linha_num})")
@@ -189,7 +174,7 @@ def fluxo_verificar_emissao_worker(page: Page, config: dict):
             resultado = navegar_e_validar_mdfe(page, numero_lt)
             if not resultado:
                 logger.error(f"[Worker Emissão] Não foi possível encontrar o card ou analisar o status para a LT {numero_lt}.")
-                continue # Pula para o próximo job
+                continue
 
             card = resultado.get("card")
             analise = resultado.get("analise")
@@ -200,7 +185,6 @@ def fluxo_verificar_emissao_worker(page: Page, config: dict):
                 logger.error(f"[Worker Emissão] Não foi possível encontrar o card ou analisar o status para a LT {numero_lt}.")
                 continue
 
-            # Prepara o lote de atualização
             colunas_update = ["Data Verificação"]
             valores_update = [data_agora]
 
@@ -210,7 +194,7 @@ def fluxo_verificar_emissao_worker(page: Page, config: dict):
                 if tipo_card == "cte":
                     logger.info(f"[Worker Emissão] [LT {numero_lt}] Status 'ag._revisão' (CTE). Executando RPA de revisão...")
                     with TimeoutDetector("Revisar LT", max_seconds=30, job_id=numero_lt):
-                        resultado_rpa = revisar_lt(page, numero_lt) # Chama "operário"
+                        resultado_rpa = revisar_lt(page, numero_lt)
                     
                     if resultado_rpa["status"] == "sucesso":
                         logger.success(f"[Worker Emissão] [LT {numero_lt}] Revisão concluída. Job será re-processado pelo Poller.")
@@ -225,7 +209,6 @@ def fluxo_verificar_emissao_worker(page: Page, config: dict):
                     colunas_update.extend(["Status de emissão", "CTE", "Data Revisão"])
                     valores_update.extend(["Nota de Serviço", "Nota de Serviço", data_agora])
 
-                # Volta para a aba Cards (lógica de RPA original)
                 cards_tab = page.get_by_role("tab", name="Cards")
                 cards_tab.scroll_into_view_if_needed()
                 cards_tab.click(force=True)
@@ -233,7 +216,6 @@ def fluxo_verificar_emissao_worker(page: Page, config: dict):
 
             elif status_card in ["liberado", "inconsistente", "ag._emissão"]:
                 
-                # --- TAREFA 1: Preencher CT-e ---
                 if not cte_preenchido:
                     if analise["status_cte"] == "autorizado":
                         logger.info(f"[Worker Emissão] [LT {numero_lt}] Status CT-e 'Autorizado'. Extraindo dados...")
@@ -262,15 +244,14 @@ def fluxo_verificar_emissao_worker(page: Page, config: dict):
                     else:
                         logger.info(f"[Worker Emissão] [LT {numero_lt}] Status CT-e: {analise['status_cte']} (Aguardando).")
 
-                # --- TAREFA 2: Preencher MDF-e ---
                 if not mdfe_preenchido:
-                    if analise["status_mdfe"] == "autorizado":
+                    if status_mdfe == "autorizado":
                         logger.info(f"[Worker Emissão] [LT {numero_lt}] Status MDF-e 'Autorizado'. Extraindo dados...")
                         with TimeoutDetector("Preencher MDF-e", max_seconds=30, job_id=numero_lt):
                             resultado_mdfe = preencher_mdfe(page, card, numero_lt)
                         
                         if resultado_mdfe["status"] == "sucesso":
-                            mdfe_preenchido = True # Atualiza o estado local
+                            mdfe_preenchido = True
                             colunas_update.extend(["MDFe", "Chave"])
                             valores_update.extend([resultado_mdfe["numeros_mdfes"], resultado_mdfe["chaves"]])
                         
@@ -280,14 +261,12 @@ def fluxo_verificar_emissao_worker(page: Page, config: dict):
                         else:
                             logger.info(f"[Worker Emissão] [LT {numero_lt}] Resultado preencher_mdfe: {resultado_mdfe['status']}")
 
-                    # Condição de "Não precisa de MDF-e"
-                    elif analise["status_mdfe"] == "-" or status_transporte in ["ENTREGA FINALIZADA", "AGUARDANDO DESCARGA"]:
+                    elif status_mdfe == "-" or status_transporte in ["ENTREGA FINALIZADA", "AGUARDANDO DESCARGA"]:
                         logger.info(f"[Worker Emissão] [LT {numero_lt}] MDF-e não é necessário (Status: {status_transporte} ou '-').")
                         mdfe_preenchido = True
                     else:
-                         logger.info(f"[Worker Emissão] [LT {numero_lt}] Status MDF-e: {analise['status_mdfe']} (Aguardando).")
+                         logger.info(f"[Worker Emissão] [LT {numero_lt}] Status MDF-e: {status_mdfe} (Aguardando).")
 
-                # --- Verificação Final ---
                 if cte_preenchido and mdfe_preenchido:
                     logger.success(f"[Worker Emissão] [LT {numero_lt}] Ambos CT-e e MDF-e preenchidos. Finalizando job.")
                     colunas_update.append("Status de emissão")
@@ -297,8 +276,7 @@ def fluxo_verificar_emissao_worker(page: Page, config: dict):
                 motivo = f"Status do card não tratado: '{status_card}'"
                 logger.warning(f"[Worker Emissão] [LT {numero_lt}] {motivo}")
 
-            # 3. ENVIAR ATUALIZAÇÕES ACUMULADAS
-            if len(colunas_update) > 1: # > 1 pois sempre tem "Data Verificação"
+            if len(colunas_update) > 1:
                 enviar_job_update(r, config, linha_num, colunas_update, valores_update)
             else:
                 logger.info(f"[Worker Emissão] [LT {numero_lt}] Nenhuma atualização necessária neste ciclo.")
@@ -310,14 +288,12 @@ def fluxo_verificar_emissao_worker(page: Page, config: dict):
                 page.reload(timeout=PAGE_RELOAD_TIMEOUT, wait_until="domcontentloaded")
             except Exception as reload_err:
                 logger.error(f"[Worker Emissão] Falha ao recarregar página: {reload_err}")
-                # Tenta navegar para a página de cards como fallback
                 try:
                     page.goto("https://portal.emiteai.com.br/#/emissor", timeout=PAGE_RELOAD_TIMEOUT)
                 except Exception as goto_err:
                     logger.error(f"[Worker Emissão] Falha crítica ao navegar: {goto_err}")
             continue
         finally:
-            # Finalizar job no watchdog
             if watchdog and numero_lt:
                 watchdog.finalizar_job(numero_lt)
             try:
@@ -326,5 +302,4 @@ def fluxo_verificar_emissao_worker(page: Page, config: dict):
             except Exception as e_redis:
                 logger.error(f"[Worker Emissão] [LT {numero_lt}] FALHA CRÍTICA ao remover cadeado do '{s_controle}': {e_redis}")
         
-    # --- NA TEORIA NUNCA CHEGA AQUI ---
     logger.info(f"[Worker Emissão] Encerrado.")

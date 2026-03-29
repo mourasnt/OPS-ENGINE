@@ -15,7 +15,7 @@
   "creds_path": "dados/credentials.json",
 
   "redis_settings": {
-    "db": 3,
+    "db_filas": 3,
     "db_state": 4,
     "db_bases": 5,
     "host": "redis-emiteai-manifestos",
