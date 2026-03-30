@@ -20,8 +20,10 @@ x-app-base: &app-base
     - GOOGLE_APPLICATION_CREDENTIALS=${GOOGLE_APPLICATION_CREDENTIALS}
     - REDIS_HOST=${REDIS_HOST}
     - REDIS_PORT=${REDIS_PORT}
+    - API_BASE_URL=${API_BASE_URL}
   networks:
     - ops-engine-network
+    - raster-api_rede-raster-services
 
 services:
   # --------------------------------------------------------------------
@@ -41,7 +43,7 @@ services:
     command: python writer.py
 
   # --------------------------------------------------------------------
-  # SERVIÇO 3: OS WORKERS (Os Músculos - Web/Playwright e APIs de Risco)
+  # SERVIÇO 3: OS WORKERS (Web/Playwright e APIs de Risco)
   # --------------------------------------------------------------------
   workers:
     <<: *app-base 

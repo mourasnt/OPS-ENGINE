@@ -161,19 +161,23 @@ def verificar_mudancas_cdc(r_state, linha, id_3zx):
                 val_anterior = estado_anterior.get(campo, "")
                 val_atual = estado_atual.get(campo, "")
                 
-                if val_anterior != val_atual:
+                if val_anterior != val_atual and val_atual not in ("", "None", None, "-"):
                     mudancas[campo] = {"de": val_anterior, "para": val_atual}
 
             if mudancas:
                 logger.info(f"🔄 [CDC DETECTOU MUDANÇA] ID 3ZX: {id_3zx} | Alterações: {json.dumps(mudancas, ensure_ascii=False)}")
                 r_state.set(redis_key, json.dumps(estado_atual))
+                return mudancas
+            return None
         else:
             # Primeira vez vendo essa viagem: salva o estado base (silenciosamente)
             r_state.set(redis_key, json.dumps(estado_atual))
-            
+            return None
+
     except Exception as e:
         logger.error(f"Erro ao verificar mudanças CDC para ID {id_3zx}: {e}")
-        
+        return None
+    
 def verificar_pendencias_api(config, r_filas):
     """Lê os jobs pendentes no Redis, consulta a API e manda ordens pro Writer"""
     try:
@@ -184,7 +188,7 @@ def verificar_pendencias_api(config, r_filas):
 
         logger.info(f"Verificando status de {len(pending_jobs)} jobs de SM pendentes na API...")
         
-        api_base_url = os.environ.get('API_BASE_URL', config.get('sm_settings', {}).get('api_base_url', ''))
+        api_base_url = os.environ.get('API_BASE_URL')
         api_raster = RasterService(api_base_url)
         fila_resultados = config.get('redis_settings', {}).get('results_queue', 'fila:resultados')
         s_controle = config.get('redis_settings', {}).get('control_set', 'jobs_em_progresso')
@@ -206,24 +210,42 @@ def verificar_pendencias_api(config, r_filas):
             api_result = status_data.get("result", {})
 
             if api_status == "complete":
-                coluna_alvo = "PRÉ SM" if job_type == "criar_pre_sm" else "SM EFET."
-                valor_final = ""
+                colunas_alvos = []
+                if job_type in ("criar_pre_sm", "refazer_pre_sm"):
+                    colunas_alvos = ["PRÉ SM"]
+                elif job_type == "cancelar_pre_sm":
+                    colunas_alvos = ["PRÉ SM", "SM EFET."]
+                elif job_type == "efetivacao_sm":
+                    colunas_alvos = ["SM EFET."]
+                valores_finais = []
                 
                 if api_result.get("sucesso"):
                     if job_type == "criar_pre_sm":
-                        valor_final = api_result.get("resultado", {}).get("PreSM", {}).get("Codigo", "ERRO: Sem Código")
+                        valores_finais = [api_result.get("resultado", {}).get("PreSM", {}).get("Codigo", "ERRO: Sem Código")]
+                    elif job_type == "cancelar_pre_sm":
+                        valores_finais = ["Cancelada", "Cancelada"]
+                    elif job_type == "refazer_pre_sm":
+                        valores_finais = [api_result.get("resultado", {}).get("PreSM", {}).get("Codigo", "ERRO: Sem Código")]
                     else:
-                        valor_final = "OK"
+                        valores_finais = ["OK"]
                     history.update_job_status(id_3zx, job_id_clean, rownum, "SUCCESS")
                 else:
-                    err = api_result.get("erro") or "Erro desconhecido"
-                    valor_final = f"ERRO: {err}"
+                    if job_type in ("criar_pre_sm", "refazer_pre_sm"):
+                        err = api_result.get("erro") or "Erro desconhecido"
+                        valores_finais = [f"ERRO: {err}"]
+                    elif job_type == "cancelar_pre_sm":
+                        err = api_result.get("erro") or "Erro desconhecido"
+                        if "Essa pre-solicitacao de monitoramento esta cancelada" in err:
+                            valores_finais = ["Cancelada", "Cancelada"]
+                        else:
+                            colunas_alvos = ["PRÉ SM"]
+                            valores_finais = [f"ERRO: {err}"]
                     history.update_job_status(id_3zx, job_id_clean, rownum, "ERROR", err)
 
                 # Manda ordem para o Writer preencher a planilha
                 job_writer = {
                     "tipo_job": "UPDATE_SHEET",
-                    "payload": {"row": int(rownum), "colunas": [coluna_alvo], "novos_valores": [str(valor_final)]}
+                    "payload": {"row": int(rownum), "colunas": colunas_alvos, "novos_valores": valores_finais}
                 }
                 r_filas.rpush(fila_resultados, json.dumps(job_writer))
                 
@@ -256,6 +278,8 @@ def iniciar_poller(config):
     
     # Novas filas de SM
     q_pre_sm = redis_cfg.get('pre_sm_queue', 'queue:pre_sm')
+    q_cancelar_pre_sm = redis_cfg.get('cancelar_pre_sm_queue', 'queue:cancelar_pre_sm')
+    q_refazer_pre_sm = redis_cfg.get('refazer_pre_sm_queue', 'queue:refazer_pre_sm')
     q_efetivacao = redis_cfg.get('efetivacao_queue', 'queue:efetivacao_sm')
 
     s_controle = redis_cfg.get('control_set')
@@ -285,12 +309,17 @@ def iniciar_poller(config):
         'Arquivo c/ Erro',
         'Pendente de Infos'
     ]
+    STATUS_CANCELADOS = [
+        'CANCELADO',
+        'NO SHOW',
+        'ROTA SEM ACIONAMENTO',
+        'INFRUTIFERA'
+    ]
+
     STATUS_CONFERIR = config.get('poller_settings', {}).get('statusConferir')
-    
-    # Variáveis da lógica de Risco
-    STATUS_PRE_SM = sm_cfg.get('status_array_pre_sm', ['PROGRAMADA'])
-    STATUS_EFETIVACAO = sm_cfg.get('status_array_efetivacao', ['EM VIAGEM'])
-    HR_ANTES_ETA = sm_cfg.get('HR_ANTES_ETA', 24)
+    STATUS_PRE_SM = sm_cfg.get('status_array_pre_sm')
+    STATUS_EFETIVACAO = sm_cfg.get('status_array_efetivacao')
+    HR_ANTES_ETA = sm_cfg.get('HR_ANTES_ETA', 7)
 
 
     creds_path = os.environ.get('GOOGLE_APPLICATION_CREDENTIALS') or config.get('creds_path')
@@ -334,6 +363,8 @@ def iniciar_poller(config):
         cont_manifesto = 0
         cont_limpeza = 0
         cont_pre_sm = 0
+        cont_cancelar_pre_sm = 0
+        cont_refazer_pre_sm = 0
         cont_efetivacao = 0
         
         dados = df_planilha.to_dict('records')
@@ -348,16 +379,14 @@ def iniciar_poller(config):
                 mdfe_baixado = linha.get('MDF-e Baixado ?', '').strip().upper()
                 
                 # Campos de Risco
-                pre_sm_val = str(linha.get('PRÉ SM', '')).strip()
-                sm_efet_val = str(linha.get('SM EFET.', '')).strip().upper()
+                pre_sm_val = str(linha.get('PRÉ SM')).strip()
+                sm_efet_val = str(linha.get('SM EFET.')).strip().upper()
 
                 if not lt:
                     continue
 
-                # ==========================================
-                # NOVO: VERIFICADOR DE MUDANÇAS (CDC)
-                # ==========================================
-                verificar_mudancas_cdc(r_state, linha, id_3zx)
+
+                mudancas = verificar_mudancas_cdc(r_state, linha, id_3zx)
 
                 # --- 1. Lógica de Limpeza ---
                 if statusEmissao in STATUS_EMISSAO_TERMINAIS and (mdfe_baixado == "SIM" or mdfe == False ):
@@ -366,20 +395,40 @@ def iniciar_poller(config):
                         logger.debug(f"Job {lt} concluído. Removido do set de controle.")
                         cont_limpeza += 1
 
-                # ==========================================
-                # LÓGICA DE GERENCIAMENTO DE RISCO (SM)
-                # ==========================================
                 # Fila: PRÉ-SM
                 if not pre_sm_val and status in STATUS_PRE_SM:
-                    if is_within_eta(linha.get('ETA Origem', ''), HR_ANTES_ETA):
+                    if is_within_eta(linha.get('ETA Origem'), HR_ANTES_ETA):
                         foi_adicionado = r_filas.sadd(s_controle, id_3zx)
                         if foi_adicionado == 1:
                             job_payload = {'row': linha['original_row_number'], 'data': linha}
                             r_filas.rpush(q_pre_sm, json.dumps(job_payload))
-                            logger.info(f"Novo job de PRÉ-SM para LT {lt} (Linha {linha['original_row_number']})")
+                            logger.info(f"Novo job de criação de PRÉ-SM para LT {lt}")
                             cont_pre_sm += 1
                         else:
                             logger.debug(f"Job {lt} (Pré-SM) já está em progresso. Pulando.")
+                
+                #Fila: Cancelar PRÉ-SM (se estiver pendente e for cancelado)
+                elif pre_sm_val.isdigit() and sm_efet_val == 'PENDENTE' and status in STATUS_CANCELADOS:
+                    foi_adicionado = r_filas.sadd(s_controle, id_3zx)
+                    if foi_adicionado == 1:
+                        job_payload = {'row': linha['original_row_number'], 'data': linha}
+                        r_filas.rpush(q_cancelar_pre_sm, json.dumps(job_payload))
+                        logger.info(f"Novo job de CANCELAR PRÉ-SM para LT {lt} devido a status cancelado ({status})")
+                        cont_cancelar_pre_sm += 1
+                    else:
+                        logger.debug(f"Job {lt} (Cancelar Pré-SM) já está em progresso. Pulando.")
+
+                # Fila: Refazer PRÉ-SM (apenas se houver mudanças e ainda não tiver SM efetivada)
+                elif pre_sm_val.isdigit() and sm_efet_val == 'PENDENTE' and status in STATUS_PRE_SM  and (mudancas["Placa"] or mudancas["Placa 2"] or mudancas["Motorista"] or mudancas["Origem"] or mudancas["Destino"]):
+                    if is_within_eta(linha.get('ETA Origem'), HR_ANTES_ETA):
+                        foi_adicionado = r_filas.sadd(s_controle, id_3zx)
+                        if foi_adicionado == 1:
+                            job_payload = {'row': linha['original_row_number'], 'data': linha}
+                            r_filas.rpush(q_refazer_pre_sm, json.dumps(job_payload))
+                            logger.info(f"Novo job de REFAZER PRÉ-SM para LT {lt} devido a mudanças detectadas ({mudancas})")
+                            cont_refazer_pre_sm += 1
+                        else:
+                            logger.debug(f"Job {lt} (Refazer Pré-SM) já está em progresso. Pulando.")
                             
                 # Fila: EFETIVAÇÃO SM
                 elif pre_sm_val.isdigit() and sm_efet_val == 'PENDENTE' and status in STATUS_EFETIVACAO:
@@ -391,10 +440,9 @@ def iniciar_poller(config):
                         cont_efetivacao += 1
                     else:
                         logger.debug(f"Job {lt} (Efetivação SM) já está em progresso. Pulando.")
-                # ==========================================
 
 
-                # --- 2. Lógica de Fila: Conferência ---
+                # Fila: Conferência
                 elif statusEmissao == 'Pendente' and status in STATUS_CONFERIR:
                     foi_adicionado = r_filas.sadd(s_controle, id_3zx)
                     if foi_adicionado == 1:
@@ -408,7 +456,7 @@ def iniciar_poller(config):
                     else:
                         logger.debug(f"Job {lt} (Conferência) já está em progresso. Pulando.")
 
-                # --- 3. Lógica de Fila: Emissão ---
+                # Fila: Emissão
                 elif statusEmissao == 'Verificar Emissão':
                     foi_adicionado = r_filas.sadd(s_controle, id_3zx)
                     if foi_adicionado == 1:
@@ -422,7 +470,7 @@ def iniciar_poller(config):
                     else:
                         logger.debug(f"Job {lt} (Emissão) já está em progresso. Pulando.")
 
-                # --- 4. Lógica de Fila: Encerramento de Manifesto (MDFe) ---
+                # Fila: Encerramento de Manifesto (MDFe)
                 elif mdfe and mdfe_baixado != 'SIM' and statusEmissao in STATUS_EMISSAO_TERMINAIS and status in ("ENTREGA FINALIZADA", "AGUARDANDO DESCARGA"):
                     logger.debug(f"MDFe {mdfe} encontrado para LT {lt}. Verificando se deve criar job de encerramento...")
                     manifesto_id = f"{mdfe}-{lt}"
@@ -437,12 +485,13 @@ def iniciar_poller(config):
                         cont_manifesto += 1
                     else:
                         logger.debug(f"Job de Manifesto {mdfe} já está em progresso. Pulando.")
+                        
 
             except Exception as e:
                 logger.error(f"Erro ao processar linha {linha.get('original_row_number', 'N/A')}: {e}")
 
         logger.info(f"Ciclo de polling finalizado.")
-        logger.info(f"Novos Jobs - Conf: {cont_conferencia} | Emiss: {cont_emissao} | Manifesto: {cont_manifesto} | Pré-SM: {cont_pre_sm} | Efetivação: {cont_efetivacao}")
+        logger.info(f"Novos Jobs - Conf: {cont_conferencia} | Emiss: {cont_emissao} | Manifesto: {cont_manifesto} | Criar Pré-SM: {cont_pre_sm} | Cancelar Pré-SM: {cont_cancelar_pre_sm} | Refazer Pré-SM: {cont_refazer_pre_sm} | Efetivação: {cont_efetivacao}")
         logger.info(f"Jobs Limpos: {cont_limpeza}.")
         logger.info(f"Próximo ciclo em {intervalo} segundos.")
         time.sleep(intervalo)

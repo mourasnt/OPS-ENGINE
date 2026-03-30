@@ -24,7 +24,7 @@ class RasterService:
         return {'Content-Type': 'application/json'}
     
     def status_job(self, job_id: str) -> requests.Response:
-        url = f"{self.base_url}/pre-sm/status/{job_id}"
+        url = f"{self.base_url}/sm/status/{job_id}"
         logger.debug(f'🔍 Verificando status do job: {job_id}')
         
         # Timeout reduzido para 30s
@@ -35,21 +35,60 @@ class RasterService:
 
 class PreSMClient(RasterService):
     def criar_lote(self, payload: Any) -> requests.Response:
-        url = f"{self.base_url}/pre-sm/criar"
+        url = f"{self.base_url}/sm/criar"
         logger.debug(f'📤 POST {url}')
         
         resp = requests.post(url, json=payload, headers=self._headers(), timeout=30, verify=False)
         resp.raise_for_status()
-        logger.success('✅ Lote criado! JobID retornado.')
+        logger.success('✅ Lote de criação de Pré-SM criado! JobID retornado.')
         return resp
-    
+    def cancelar_pre_sm(self, cod_pre_sm: str) -> requests.Response:
+        url = f"{self.base_url}/sm/cancelar-pre-sm"
+        logger.debug(f'📤 POST {url}')
+        
+        resp = requests.post(url, json={'cod_pre_sm': cod_pre_sm}, headers=self._headers(), timeout=30, verify=False)
+        resp.raise_for_status()
+        logger.success('✅ Lote de cancelamento de Pré-SM criado! JobID retornado.')
+        return resp
+    def refazer_pre_sm(self, cod_pre_sm: str, payload: Any) -> requests.Response:
+        url = f"{self.base_url}/sm/refazer-pre-sm"
+        logger.debug(f'📤 POST {url}')
+        
+        resp = requests.post(url, json={'cod_pre_sm': cod_pre_sm, 'payload': payload}, headers=self._headers(), timeout=30, verify=False)
+        resp.raise_for_status()
+        logger.success('✅ Lote de atualização de Pré-SM criado! JobID retornado.')
+        return resp
 
 class SMClient(RasterService):
     def efetivar_lote(self, payload: Any) -> requests.Response:
-        url = f"{self.base_url}/pre-sm/efetivar"
+        url = f"{self.base_url}/sm/efetivar"
         logger.debug(f'📤 POST {url}')
         
         resp = requests.post(url, json=payload, headers=self._headers(), timeout=30, verify=False)
         resp.raise_for_status()
-        logger.success('✅ Lote de efetivação enviado! JobID retornado.')
+        logger.success('✅ Lote de efetivação de SM criado! JobID retornado.')
+        return resp
+    def cancelar_sm(self, cod_sm: str, motivo: str) -> requests.Response:
+        url = f"{self.base_url}/sm/cancelar-sm"
+        logger.debug(f'📤 POST {url}')
+        
+        resp = requests.post(url, json={'cod_sm': cod_sm, 'motivo': motivo}, headers=self._headers(), timeout=30, verify=False)
+        resp.raise_for_status()
+        logger.success('✅ Lote de cancelamento de SM criado! JobID retornado.')
+        return resp
+    def finalizar_sm(self, cod_sm: str) -> requests.Response:
+        url = f"{self.base_url}/sm/finalizar-sm"
+        logger.debug(f'📤 POST {url}')
+        
+        resp = requests.post(url, json={'cod_sm': cod_sm}, headers=self._headers(), timeout=30, verify=False)
+        resp.raise_for_status()
+        logger.success('✅ Lote de finalização de SM criado! JobID retornado.')
+        return resp
+    def refazer_sm(self, cod_sm: str, payload: Any) -> requests.Response:
+        url = f"{self.base_url}/sm/refazer-sm"
+        logger.debug(f'📤 POST {url}')
+        
+        resp = requests.post(url, json={'cod_sm': cod_sm, 'payload': payload}, headers=self._headers(), timeout=30, verify=False)
+        resp.raise_for_status()
+        logger.success('✅ Lote de atualização de SM criado! JobID retornado.')
         return resp

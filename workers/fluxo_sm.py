@@ -1,7 +1,8 @@
 import json
 import os
 from typing import Dict, Any, Optional
-from datetime import datetime, time, timedelta
+from datetime import datetime, timedelta
+import time
 from loguru import logger
 
 from utils.redis_client import get_redis
@@ -29,12 +30,15 @@ class WorkerSM:
 
         self.q_pre_sm = redis_cfg.get('pre_sm_queue', 'fila:pre_sm')
         self.q_efetivacao = redis_cfg.get('efetivacao_queue', 'fila:efetivacao_sm')
+        self.q_cancelar_pre_sm = redis_cfg.get('cancelar_pre_sm_queue', 'fila:cancelar_pre_sm')
+        self.q_refazer_pre_sm = redis_cfg.get('refazer_pre_sm_queue', 'fila:refazer_pre_sm')
+
         self.fila_resultados = redis_cfg.get('results_queue', 'fila:resultados') 
 
         sm_cfg = config_dict.get('sm_settings', {})
         api_base_url = os.environ.get('API_BASE_URL', sm_cfg.get('api_base_url', ''))
         
-        self.api = PreSMClient(api_base_url)
+        self.api_pre_sm = PreSMClient(api_base_url)
         self.api_efetivacao = SMClient(api_base_url)
         
         try:
@@ -168,50 +172,76 @@ class WorkerSM:
         payload = self.build_payload_pre_sm(row)
         if not payload: return 
 
-        resp = self.api.criar_lote([payload])
-        self._tratar_resposta_api(resp, row, "PRÉ SM")
+        resp = self.api_pre_sm.criar_lote([payload])
+        self._tratar_resposta_api(resp, row, "PRÉ SM", "criar_pre_sm")
+
+    def cancelar_single_pre_sm(self, row: Dict[str, Any]):
+        logger.info(f"[CANCELAR PRÉ-SM] Processando Job para ID: {row.get('ID 3ZX')}")
+        cod_pre_sm = row.get("PRÉ SM")
+        if not cod_pre_sm:
+            logger.warning(f"ID {row.get('ID 3ZX')}: Código de Pré-SM ausente para cancelamento.")
+            return
+        
+        resp = self.api_pre_sm.cancelar_pre_sm(str(cod_pre_sm))
+        self._tratar_resposta_api(resp, row, "PRÉ SM", "cancelar_pre_sm")
+
+    def refazer_single_pre_sm(self, row: Dict[str, Any]):
+        logger.info(f"[REFAZER PRÉ-SM] Processando Job para ID: {row.get('ID 3ZX')}")
+        cod_pre_sm = row.get("PRÉ SM")
+        if not cod_pre_sm:
+            logger.warning(f"ID {row.get('ID 3ZX')}: Código de Pré-SM ausente para refazer.")
+            return
+        
+        payload = self.build_payload_pre_sm(row)
+        if not payload: return 
+
+        resp = self.api_pre_sm.refazer_pre_sm(str(cod_pre_sm), [payload])
+        self._tratar_resposta_api(resp, row, "PRÉ SM", "refazer_pre_sm")
 
     def processar_single_efetivacao(self, row: Dict[str, Any]):
         logger.info(f"[EFETIVAÇÃO] Processando Job para ID: {row.get('ID 3ZX')}")
         payload = self.build_payload_efetivacao(row)
         
         resp = self.api_efetivacao.efetivar_lote([payload])
-        self._tratar_resposta_api(resp, row, "SM EFET.")
+        self._tratar_resposta_api(resp, row, "SM EFET.", "efetivar_sm")
 
-    def _tratar_resposta_api(self, resp, row: Dict[str, Any], target_col: str):
+    def _tratar_resposta_api(self, resp, row: Dict[str, Any], target_col: str, job_type: str):
         if not getattr(resp, "ok", False):
             logger.error(f"[API] Erro Http: {getattr(resp, 'status_code', '??')}")
             return
         
         resp_data = resp.json()
+        print(f"Resposta API bruta para ID {row.get('ID 3ZX')}: {resp_data}")
         if not resp_data: return
-        job = resp_data[0] 
+
+        job = resp_data[0] if isinstance(resp_data, list) else resp_data
+
+        print(f"Resposta API para ID {job.get('id') or row.get('ID 3ZX')}: {job}")
         
         id_3zx = job.get("id") or row.get("ID 3ZX")
         rownum = row.get("original_row_number")
         job_id = job.get("job_id") or f"NO_JOB_{id_3zx}"
-        job_type = job.get("type", "criar_pre_sm" if target_col == "PRÉ SM" else "efetivar_sm")
 
         if job.get("status") == "accepted" or job.get("sucesso"):
             self.history.add_job(id_3zx, job_id, rownum, job_type)
             logger.info(f"Job {job_id} ({job_type}) enviado para API com sucesso. Aguardando Poller verificar status.")
         else:
             err = job.get("erro") or str(job)
-            self.enviar_update_writer(rownum, target_col, f"ERRO: {err}")
+            if job_type == "criar_pre_sm":
+                self.enviar_update_writer(rownum, target_col, f"ERRO: {err}")
             self.history.add_job(id_3zx, job_id, rownum, job_type)
             self.history.update_job_status(id_3zx, job_id, rownum, status="ERROR", error=err)
             logger.warning(f"Job {job_type} recusado imediatamente pela API: {err}")
 
-
     def iniciar_consumo(self):
         logger.info("="*60)
-        logger.info(f"Worker API (Músculo) iniciado.")
-        logger.info(f"Ouvindo filas: {self.q_pre_sm} e {self.q_efetivacao}")
+        logger.info(f"Worker API iniciado.")
+        logger.info(f"Ouvindo filas: {self.q_pre_sm},  {self.q_efetivacao}, {self.q_cancelar_pre_sm} e {self.q_refazer_pre_sm}")
         logger.info("="*60)
 
         while True:
             try:
-                item = self.r_filas.blpop([self.q_pre_sm, self.q_efetivacao], timeout=0)
+                item = self.r_filas.blpop([self.q_pre_sm, self.q_efetivacao, self.q_cancelar_pre_sm, self.q_refazer_pre_sm], timeout=0)
 
                 if item:
                     fila_origem, payload_str = item
@@ -222,6 +252,10 @@ class WorkerSM:
                         self.processar_single_pre_sm(linha_planilha)
                     elif fila_origem == self.q_efetivacao:
                         self.processar_single_efetivacao(linha_planilha)
+                    elif fila_origem == self.q_cancelar_pre_sm:
+                        self.cancelar_single_pre_sm(linha_planilha)
+                    elif fila_origem == self.q_refazer_pre_sm:
+                        self.refazer_single_pre_sm(linha_planilha)
 
             except json.JSONDecodeError:
                 logger.error("Erro ao decodificar JSON da fila do Redis.")

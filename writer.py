@@ -114,10 +114,10 @@ def obter_mapa_cabecalho(worksheet, linha_cabecalho):
 # --- LÓGICA PRINCIPAL DO WRITER ---
 def iniciar_writer(config):
 
-    creds_path = os.environ.get('GOOGLE_APPLICATION_CREDENTIALS') or config.get('creds_path')
+    creds_path = os.environ.get('GOOGLE_APPLICATION_CREDENTIALS')
     # Validação de arquivo de credenciais
     if not creds_path or not os.path.exists(creds_path):
-        logger.critical("Arquivo de credenciais do Google não encontrado. Defina GOOGLE_APPLICATION_CREDENTIALS ou atualize o config.json para apontar para o JSON.")
+        logger.critical("Arquivo de credenciais do Google não encontrado")
         return
 
     main_sheet_cfg = config.get('main_sheet', {})

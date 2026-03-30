@@ -10,7 +10,7 @@ from loguru import logger
 
 from utils.helpers import carregar_config 
 from utils.redis_client import get_redis
-from utils.fluxo_utils import ThreadPoolManager
+from utils.thread_util import ThreadPoolManager
 from utils.watchdog import JobWatchdog
 from utils.status_display import StatusDisplay
 
@@ -102,7 +102,7 @@ def executar_fluxo(nome_fluxo: str, funcao_fluxo, config: Dict[str, Any]):
                 return
             
             funcao_fluxo(page, config) 
-            logger.info(f"[{nome_fluxo}] Loop de consumo encerrado (Downscaling ou fim).")
+            logger.info(f"[{nome_fluxo}] Loop de consumo encerrado.")
 
         except Exception as e:
             logger.critical(f"[{nome_fluxo}] Erro fatal: {e}\n{traceback.format_exc()}")
@@ -127,15 +127,20 @@ def executar_fluxo_api(nome_fluxo: str, funcao_fluxo, config: Dict[str, Any]):
 def executor_inteligente(nome_fluxo: str, arg2, arg3=None):
     """
     Roteador dinâmico: Decide qual executor base usar lendo o REGISTRY.
-    Aceita ser chamado via Thread manual (nome, func, config) ou via 
-    ThreadPoolManager (nome, config).
+    Normaliza nomes vindos do ThreadPoolManager para encontrar a chave correta.
     """
-    worker_info = WORKERS_REGISTRY.get(nome_fluxo)
+    # Normalização: "conferencia_worker_1" -> "conferencia"
+    if "gerenciamento_risco" in nome_fluxo:
+        nome_base = "gerenciamento_risco"
+    else:
+        nome_base = nome_fluxo.split("_")[0]
+
+    worker_info = WORKERS_REGISTRY.get(nome_base)
     if not worker_info:
-        logger.error(f"Tentativa de iniciar um fluxo desconhecido: {nome_fluxo}")
+        logger.error(f"Tentativa de iniciar um fluxo desconhecido: {nome_fluxo} (Base: {nome_base})")
         return
 
-    # Tratamento flexível de argumentos para evitar TypeError
+    # Tratamento flexível de argumentos (Manual vs Manager)
     if callable(arg2):
         funcao_fluxo = arg2
         config = arg3
@@ -163,13 +168,12 @@ def main():
     # --- Inicialização do Redis ---
     redis_cfg = config.get('redis_settings', {})
     try:
-        redis_host = os.environ.get('REDIS_HOST')
-        redis_port = int(os.environ.get('REDIS_PORT'))
-        
+        redis_host = os.environ.get('REDIS_HOST', redis_cfg.get('host', 'localhost'))
+        redis_port = int(os.environ.get('REDIS_PORT', redis_cfg.get('port', 6379)))
         redis_db = redis_cfg.get('db_fila')
         
         if redis_db is None:
-            logger.critical("O banco 'db_fila' não está definido no config.json em redis_settings.")
+            logger.critical("O banco 'db_fila' não está definido no config.json.")
             sys.exit(1)
             
         redis_client = get_redis(host=redis_host, port=redis_port, db=int(redis_db))
@@ -188,7 +192,6 @@ def main():
         watchdog.iniciar()
         config['watchdog'] = watchdog
         
-        # Mapa de Filas para o Status Display dinâmico
         mapa_de_filas = {
             "conferencia": redis_cfg.get('conference_queue', 'fila:conferencia'),
             "emissao": redis_cfg.get('emission_queue', 'fila:emissao'),
@@ -216,15 +219,14 @@ def main():
         )
         config['thread_pool_manager'] = pool_manager
 
-        # --- Geração Dinâmica de Threads ---
-        threads = []
+        # --- Geração Dinâmica de Threads Iniciais ---
         for nome_fluxo, dados in WORKERS_REGISTRY.items():
             t = threading.Thread(
                 target=executor_inteligente, 
                 args=(nome_fluxo, dados["func"], config), 
-                daemon=True
+                daemon=True,
+                name=f"Thread-{nome_fluxo}-Inicial"
             )
-            threads.append(t)
             t.start()
 
         pool_manager.iniciar()
