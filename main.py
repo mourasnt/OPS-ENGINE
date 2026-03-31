@@ -24,9 +24,9 @@ from fluxos.fluxo_login import fluxo_login
 # REGISTRO DE WORKERS (Adicione novos robôs apenas aqui)
 # ===================================================================
 WORKERS_REGISTRY = {
-    "conferencia": {"func": fluxo_conferencia_worker, "tipo": "web"},
-    "emissao": {"func": fluxo_verificar_emissao_worker, "tipo": "web"},
-    "manifesto": {"func": fluxo_encerrar_manifesto_worker, "tipo": "web"},
+    #"conferencia": {"func": fluxo_conferencia_worker, "tipo": "web"},
+    #"emissao": {"func": fluxo_verificar_emissao_worker, "tipo": "web"},
+    #"manifesto": {"func": fluxo_encerrar_manifesto_worker, "tipo": "web"},
     "gerenciamento_risco": {"func": fluxo_sm_worker, "tipo": "api"}
 }
 
