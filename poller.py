@@ -240,6 +240,8 @@ def verificar_pendencias_api(config, r_filas):
                         else:
                             colunas_alvos = ["PRÉ SM"]
                             valores_finais = [f"ERRO: {err}"]
+                    else:
+                        err = api_result.get("erro") or "Erro desconhecido"
                     history.update_job_status(id_3zx, job_id_clean, rownum, "ERROR", err)
 
                 # Manda ordem para o Writer preencher a planilha
@@ -395,6 +397,17 @@ def iniciar_poller(config):
                         logger.debug(f"Job {lt} concluído. Removido do set de controle.")
                         cont_limpeza += 1
 
+                if id_3zx == "S55001":
+                    # --- INÍCIO DO DEBUG ---
+                    logger.info("=== DEBUG ELIF REFAZER PRÉ-SM ===")
+                    logger.info(f"1. pre_sm_val: {repr(pre_sm_val)} | isdigit? {isinstance(pre_sm_val, str) and pre_sm_val.isdigit()}")
+                    logger.info(f"2. sm_efet_val: {repr(sm_efet_val)} | Igual a 'PENDENTE'? {sm_efet_val == 'PENDENTE'}")
+                    logger.info(f"3. status: {repr(status)} | Está em STATUS_PRE_SM ({STATUS_PRE_SM})? {status in STATUS_PRE_SM}")
+
+                    teve_mudanca_chave = bool(mudancas.get("Placa") or mudancas.get("Placa 2") or mudancas.get("Motorista") or mudancas.get("Origem") or mudancas.get("Destino"))
+                    logger.info(f"4. Teve mudanca nas chaves especificas? {teve_mudanca_chave}")
+                    logger.info(f"Valores do dict mudancas: Placa={repr(mudancas.get('Placa'))}, Placa 2={repr(mudancas.get('Placa 2'))}, Motorista={repr(mudancas.get('Motorista'))}, Origem={repr(mudancas.get('Origem'))}, Destino={repr(mudancas.get('Destino'))}")
+                    # --- FIM DO DEBUG ---
                 # Fila: PRÉ-SM
                 if not pre_sm_val and status in STATUS_PRE_SM:
                     if is_within_eta(linha.get('ETA Origem'), HR_ANTES_ETA):
@@ -419,8 +432,9 @@ def iniciar_poller(config):
                         logger.debug(f"Job {lt} (Cancelar Pré-SM) já está em progresso. Pulando.")
 
                 # Fila: Refazer PRÉ-SM (apenas se houver mudanças e ainda não tiver SM efetivada)
-                elif pre_sm_val.isdigit() and sm_efet_val == 'PENDENTE' and status in STATUS_PRE_SM  and (mudancas["Placa"] or mudancas["Placa 2"] or mudancas["Motorista"] or mudancas["Origem"] or mudancas["Destino"]):
-                    if is_within_eta(linha.get('ETA Origem'), HR_ANTES_ETA):
+                elif pre_sm_val.isdigit() and sm_efet_val == 'PENDENTE' and status in STATUS_PRE_SM and mudancas and (mudancas.get("Placa") or mudancas.get("Placa 2") or mudancas.get("Motorista") or mudancas.get("Origem") or mudancas.get("Destino")):
+                    #if is_within_eta(linha.get('ETA Origem'), HR_ANTES_ETA):
+                    if 1 == 1:
                         foi_adicionado = r_filas.sadd(s_controle, id_3zx)
                         if foi_adicionado == 1:
                             job_payload = {'row': linha['original_row_number'], 'data': linha}
@@ -443,7 +457,7 @@ def iniciar_poller(config):
 
 
                 # Fila: Conferência
-                elif statusEmissao == 'Pendente' and status in STATUS_CONFERIR:
+                if statusEmissao == 'Pendente' and status in STATUS_CONFERIR:
                     foi_adicionado = r_filas.sadd(s_controle, id_3zx)
                     if foi_adicionado == 1:
                         job_payload = {

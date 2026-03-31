@@ -195,7 +195,7 @@ class WorkerSM:
         payload = self.build_payload_pre_sm(row)
         if not payload: return 
 
-        resp = self.api_pre_sm.refazer_pre_sm(str(cod_pre_sm), [payload])
+        resp = self.api_pre_sm.refazer_pre_sm(str(cod_pre_sm), payload)
         self._tratar_resposta_api(resp, row, "PRÉ SM", "refazer_pre_sm")
 
     def processar_single_efetivacao(self, row: Dict[str, Any]):

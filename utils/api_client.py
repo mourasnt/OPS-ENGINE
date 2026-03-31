@@ -55,6 +55,7 @@ class PreSMClient(RasterService):
         logger.debug(f'📤 POST {url}')
         
         resp = requests.post(url, json={'cod_pre_sm': cod_pre_sm, 'payload': payload}, headers=self._headers(), timeout=30, verify=False)
+        print(resp.text)
         resp.raise_for_status()
         logger.success('✅ Lote de atualização de Pré-SM criado! JobID retornado.')
         return resp
