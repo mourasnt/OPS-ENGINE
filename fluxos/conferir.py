@@ -316,7 +316,7 @@ def conferir_lt(page: Page, carga: Carga) -> dict:
             transportadora_input = page.get_by_role("textbox", name="Transportadora*")
             transportadora_input.clear()
             transportadora_input.type("3ZX", delay=50)
-            if not clicar_option(page, "34.790.798/0001-34 - 3ZX SP", exact=True, timeout=12000):
+            if not clicar_option(page, "34.790.798/0001-34 - 3ZX", exact=True, timeout=12000):
                 logger.error(f"[Worker Conferência] Opção transportadora 3ZX não encontrada - LT {carga.numero_lt}.")
 
             tipo_veiculo_input = page.get_by_role("textbox", name="Tipo de Veículo")
