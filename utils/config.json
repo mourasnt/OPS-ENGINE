@@ -82,5 +82,5 @@
   
   "default_frete": 100,
   "default_pedagio": 0,
-  "acao_valor_invalido": "preencher"
+  "acao_valor_invalido": "pular_linha"
 }

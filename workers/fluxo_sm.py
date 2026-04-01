@@ -211,12 +211,9 @@ class WorkerSM:
             return
         
         resp_data = resp.json()
-        print(f"Resposta API bruta para ID {row.get('ID 3ZX')}: {resp_data}")
         if not resp_data: return
 
         job = resp_data[0] if isinstance(resp_data, list) else resp_data
-
-        print(f"Resposta API para ID {job.get('id') or row.get('ID 3ZX')}: {job}")
         
         id_3zx = job.get("id") or row.get("ID 3ZX")
         rownum = row.get("original_row_number")

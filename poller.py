@@ -397,17 +397,6 @@ def iniciar_poller(config):
                         logger.debug(f"Job {lt} concluído. Removido do set de controle.")
                         cont_limpeza += 1
 
-                if id_3zx == "S55001":
-                    # --- INÍCIO DO DEBUG ---
-                    logger.info("=== DEBUG ELIF REFAZER PRÉ-SM ===")
-                    logger.info(f"1. pre_sm_val: {repr(pre_sm_val)} | isdigit? {isinstance(pre_sm_val, str) and pre_sm_val.isdigit()}")
-                    logger.info(f"2. sm_efet_val: {repr(sm_efet_val)} | Igual a 'PENDENTE'? {sm_efet_val == 'PENDENTE'}")
-                    logger.info(f"3. status: {repr(status)} | Está em STATUS_PRE_SM ({STATUS_PRE_SM})? {status in STATUS_PRE_SM}")
-
-                    teve_mudanca_chave = bool(mudancas.get("Placa") or mudancas.get("Placa 2") or mudancas.get("Motorista") or mudancas.get("Origem") or mudancas.get("Destino"))
-                    logger.info(f"4. Teve mudanca nas chaves especificas? {teve_mudanca_chave}")
-                    logger.info(f"Valores do dict mudancas: Placa={repr(mudancas.get('Placa'))}, Placa 2={repr(mudancas.get('Placa 2'))}, Motorista={repr(mudancas.get('Motorista'))}, Origem={repr(mudancas.get('Origem'))}, Destino={repr(mudancas.get('Destino'))}")
-                    # --- FIM DO DEBUG ---
                 # Fila: PRÉ-SM
                 if not pre_sm_val and status in STATUS_PRE_SM:
                     if is_within_eta(linha.get('ETA Origem'), HR_ANTES_ETA):
@@ -500,7 +489,6 @@ def iniciar_poller(config):
                     else:
                         logger.debug(f"Job de Manifesto {mdfe} já está em progresso. Pulando.")
                         
-
             except Exception as e:
                 logger.error(f"Erro ao processar linha {linha.get('original_row_number', 'N/A')}: {e}")
 
