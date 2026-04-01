@@ -135,16 +135,13 @@ def obter_dados_para_poller(config, client):
 
 
 # --- FUNÇÃO DE DETECÇÃO DE MUDANÇAS (CDC) ---
-def verificar_mudancas_cdc(r_state, linha, id_3zx):
+def verificar_mudancas_cdc(r_state, linha, id_3zx, campos_monitorados):
     """
     Compara o estado atual da linha com o estado armazenado no Redis.
     Apenas loga se houver mudanças.
     """
     if not id_3zx:
         return
-
-    # Campos que desejamos monitorar
-    campos_monitorados = ["Origem", "Destino", "Motorista", "Placa", "Placa 2", "Status"]
     
     estado_atual = {campo: str(linha.get(campo, "")).strip() for campo in campos_monitorados}
     redis_key = f"viagem_state:{id_3zx}"
@@ -370,6 +367,7 @@ def iniciar_poller(config):
         cont_efetivacao = 0
         
         dados = df_planilha.to_dict('records')
+        campos_monitorados = ["Origem", "Destino", "Motorista", "Placa", "Placa 2", "Status", "ETA Origem", "ETA Destino", "CPT", "CPF"]
 
         for linha in dados:
             try:
@@ -388,7 +386,7 @@ def iniciar_poller(config):
                     continue
 
 
-                mudancas = verificar_mudancas_cdc(r_state, linha, id_3zx)
+                mudancas = verificar_mudancas_cdc(r_state, linha, id_3zx, campos_monitorados)
 
                 # --- 1. Lógica de Limpeza ---
                 if statusEmissao in STATUS_EMISSAO_TERMINAIS and (mdfe_baixado == "SIM" or mdfe == False ):
@@ -421,9 +419,8 @@ def iniciar_poller(config):
                         logger.debug(f"Job {lt} (Cancelar Pré-SM) já está em progresso. Pulando.")
 
                 # Fila: Refazer PRÉ-SM (apenas se houver mudanças e ainda não tiver SM efetivada)
-                elif pre_sm_val.isdigit() and sm_efet_val == 'PENDENTE' and status in STATUS_PRE_SM and mudancas and (mudancas.get("Placa") or mudancas.get("Placa 2") or mudancas.get("Motorista") or mudancas.get("Origem") or mudancas.get("Destino")):
-                    #if is_within_eta(linha.get('ETA Origem'), HR_ANTES_ETA):
-                    if 1 == 1:
+                elif pre_sm_val.isdigit() and sm_efet_val == 'PENDENTE' and status in STATUS_PRE_SM and mudancas and (next((mudancas.get(coluna) for coluna in campos_monitorados if mudancas.get(coluna)), None)):
+                    if is_within_eta(linha.get('ETA Origem'), HR_ANTES_ETA):
                         foi_adicionado = r_filas.sadd(s_controle, id_3zx)
                         if foi_adicionado == 1:
                             job_payload = {'row': linha['original_row_number'], 'data': linha}
