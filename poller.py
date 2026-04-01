@@ -419,16 +419,15 @@ def iniciar_poller(config):
                         logger.debug(f"Job {lt} (Cancelar Pré-SM) já está em progresso. Pulando.")
 
                 # Fila: Refazer PRÉ-SM (apenas se houver mudanças e ainda não tiver SM efetivada)
-                elif pre_sm_val.isdigit() and sm_efet_val == 'PENDENTE' and status in STATUS_PRE_SM and mudancas and (next((mudancas.get(coluna) for coluna in campos_monitorados if mudancas.get(coluna)), None)):
-                    if is_within_eta(linha.get('ETA Origem'), HR_ANTES_ETA):
-                        foi_adicionado = r_filas.sadd(s_controle, id_3zx)
-                        if foi_adicionado == 1:
-                            job_payload = {'row': linha['original_row_number'], 'data': linha}
-                            r_filas.rpush(q_refazer_pre_sm, json.dumps(job_payload))
-                            logger.info(f"Novo job de REFAZER PRÉ-SM para LT {lt} devido a mudanças detectadas ({mudancas})")
-                            cont_refazer_pre_sm += 1
-                        else:
-                            logger.debug(f"Job {lt} (Refazer Pré-SM) já está em progresso. Pulando.")
+                elif pre_sm_val.isdigit() and sm_efet_val == 'PENDENTE' and status in STATUS_PRE_SM and mudancas and any(mudancas.get(coluna) for coluna in campos_monitorados if coluna != "Status"):
+                    foi_adicionado = r_filas.sadd(s_controle, id_3zx)
+                    if foi_adicionado == 1:
+                        job_payload = {'row': linha['original_row_number'], 'data': linha}
+                        r_filas.rpush(q_refazer_pre_sm, json.dumps(job_payload))
+                        logger.info(f"Novo job de REFAZER PRÉ-SM para LT {lt} devido a mudanças detectadas ({mudancas})")
+                        cont_refazer_pre_sm += 1
+                    else:
+                        logger.debug(f"Job {lt} (Refazer Pré-SM) já está em progresso. Pulando.")
                             
                 # Fila: EFETIVAÇÃO SM
                 elif pre_sm_val.isdigit() and sm_efet_val == 'PENDENTE' and status in STATUS_EFETIVACAO:
