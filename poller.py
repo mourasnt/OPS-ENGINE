@@ -91,7 +91,7 @@ def obter_dados_para_poller(config, client):
         # Colunas adicionais necessárias pelos workers e pelo CDC + SM Efetivação
         optional_cols = [
             'Tabela Frete', 'Pedágio', 'Placa', 'Placa 2', 'Origem', 'Destino', 'Motorista', 'CTE',
-            'ETA Origem', 'ETA Destino', 'CPT', 'PRÉ SM', 'SM EFET.', 'CPF'  # Adicionadas as colunas do SM
+            'ETA Origem', 'ETA Destino', 'CPT', 'PRÉ SM', "COD SM", 'SM EFET.', 'CPF'  # Adicionadas as colunas do SM
         ]
         missing_optional = [col for col in optional_cols if col not in header_map]
         if missing_optional:
