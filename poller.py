@@ -213,7 +213,7 @@ def verificar_pendencias_api(config, r_filas):
                 elif job_type == "cancelar_pre_sm":
                     colunas_alvos = ["PRÉ SM", "SM EFET."]
                 elif job_type == "efetivacao_sm":
-                    colunas_alvos = ["SM EFET."]
+                    colunas_alvos = ["SM EFET.", "COD SM"]
                 valores_finais = []
                 
                 if api_result.get("sucesso"):
@@ -223,8 +223,8 @@ def verificar_pendencias_api(config, r_filas):
                         valores_finais = ["Cancelada", "Cancelada"]
                     elif job_type == "refazer_pre_sm":
                         valores_finais = [api_result.get("resultado", {}).get("PreSM", {}).get("Codigo", "ERRO: Sem Código")]
-                    else:
-                        valores_finais = ["OK"]
+                    elif job_type == "efetivacao_sm":
+                        valores_finais = ["OK", api_result.get("resultado", {}).get("SM", {}).get("Codigo", "ERRO: Sem Código")]
                     history.update_job_status(id_3zx, job_id_clean, rownum, "SUCCESS")
                 else:
                     if job_type in ("criar_pre_sm", "refazer_pre_sm"):
@@ -239,6 +239,7 @@ def verificar_pendencias_api(config, r_filas):
                             valores_finais = [f"ERRO: {err}"]
                     else:
                         err = api_result.get("erro") or "Erro desconhecido"
+                        print(f"Erro na efetivação da SM para ID {id_3zx}: {err}")
                     history.update_job_status(id_3zx, job_id_clean, rownum, "ERROR", err)
 
                 # Manda ordem para o Writer preencher a planilha
@@ -312,7 +313,8 @@ def iniciar_poller(config):
         'CANCELADO',
         'NO SHOW',
         'ROTA SEM ACIONAMENTO',
-        'INFRUTIFERA'
+        'INFRUTIFERA',
+        'INFRUTÍFERA'
     ]
 
     STATUS_CONFERIR = config.get('poller_settings', {}).get('statusConferir')
