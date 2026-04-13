@@ -229,7 +229,7 @@ def main():
         
         sm_thread = threading.Thread(
             target=executor_inteligente,
-            args=("gerenciamento_risco",),
+            args=("gerenciamento_risco", config),
             daemon=True,
             name="Thread-GerenciamentoRisco"
         )
