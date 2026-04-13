@@ -27,7 +27,8 @@
     "pre_sm_queue": "fila:pre_sm",
     "cancelar_pre_sm_queue": "fila:cancelar_pre_sm",
     "refazer_pre_sm_queue": "fila:refazer_pre_sm",
-    "efetivacao_queue": "fila:efetivacao_sm"
+    "efetivacao_queue": "fila:efetivacao_sm",
+    "preencher_sm_queue": "fila:preencher_sm"
   },
 
   "writer_settings": {

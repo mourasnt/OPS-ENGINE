@@ -85,8 +85,9 @@ class ThreadPoolManager:
         """
         Calcula quantas threads são necessárias para o tipo de job.
         
+        LAZY CREATION: Se não há jobs, retorna 0 (não cria workers preemptivamente).
+        
         Fórmula: ceil(jobs_pendentes / jobs_per_thread_ratio)
-        Mínimo: min_threads_per_type (configurável em thread_pool_settings) - SEMPRE respeitado
         Máximo: max_threads_per_type
         """
         fila_key = f"fila:{tipo_job}"
@@ -94,17 +95,16 @@ class ThreadPoolManager:
             jobs_pendentes = self.redis_client.llen(fila_key)
             
             if jobs_pendentes == 0:
-                # Mesmo sem jobs, mantém o mínimo de threads configurado
-                return self.min_threads_per_type
+                return 0
             
             threads_necessarias = ceil(jobs_pendentes / self.jobs_per_thread_ratio)
-            threads_necessarias = max(threads_necessarias, self.min_threads_per_type)
+            threads_necessarias = max(1, threads_necessarias)
             threads_necessarias = min(threads_necessarias, self.max_threads_per_type)
             
             return threads_necessarias
         except Exception as e:
             logger.error(f"Erro ao contar jobs em fila:{tipo_job}: {e}")
-            return self.min_threads_per_type  # Em caso de erro, retorna o mínimo
+            return 0
     
     def _marcar_thread_para_morte(self, tipo_job: str, thread: threading.Thread):
         """
@@ -306,21 +306,8 @@ class ThreadPoolManager:
                 logger.error(f"Erro no monitor de rebalanceamento: {e}")
     
     def iniciar(self):
-        """Inicia o gerenciador de thread pool."""
-        logger.info("Iniciando ThreadPoolManager...")
-        # Cria threads iniciais (SEMPRE 1 de cada tipo, independente de jobs)
-        with self.lock:
-            for tipo_job in ["conferencia", "emissao", "manifesto"]:
-                try:
-                    nome_worker = f"{tipo_job}_worker_1"
-                    nova_thread = self.criar_thread_worker(tipo_job, nome_worker)
-                    if nova_thread:
-                        nova_thread.start()
-                        self.threads[tipo_job].append(nova_thread)
-                        logger.success(f"Thread inicial '{nova_thread.name}' iniciada.")
-                except Exception as e:
-                    logger.error(f"Erro ao criar thread inicial de {tipo_job}: {e}")
-        # Inicia thread de monitoramento
+        """Inicia o gerenciador de thread pool (LAZY - não cria workers até ter jobs)."""
+        logger.info("Iniciando ThreadPoolManager (Lazy Mode)...")
         thread_monitor = threading.Thread(
             target=self.monitorar_rebalanceamento,
             daemon=True,

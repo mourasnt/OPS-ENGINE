@@ -30,6 +30,7 @@ class WorkerSM:
 
         self.q_pre_sm = redis_cfg.get('pre_sm_queue', 'fila:pre_sm')
         self.q_efetivacao = redis_cfg.get('efetivacao_queue', 'fila:efetivacao_sm')
+        self.q_preencher_sm = redis_cfg.get('preencher_sm_queue', 'fila:preencher_sm')
         self.q_cancelar_pre_sm = redis_cfg.get('cancelar_pre_sm_queue', 'fila:cancelar_pre_sm')
         self.q_refazer_pre_sm = redis_cfg.get('refazer_pre_sm_queue', 'fila:refazer_pre_sm')
 
@@ -198,12 +199,15 @@ class WorkerSM:
         resp = self.api_pre_sm.refazer_pre_sm(str(cod_pre_sm), payload)
         self._tratar_resposta_api(resp, row, "PRÉ SM", "refazer_pre_sm")
 
-    def processar_single_efetivacao(self, row: Dict[str, Any]):
+    def processar_single_efetivacao(self, row: Dict[str, Any], preencher_sm: bool = False):
         logger.info(f"[EFETIVAÇÃO] Processando Job para ID: {row.get('ID 3ZX')}")
         payload = self.build_payload_efetivacao(row)
         
         resp = self.api_efetivacao.efetivar_lote([payload])
-        self._tratar_resposta_api(resp, row, "SM EFET.", "efetivar_sm")
+        if preencher_sm:
+            self._tratar_resposta_api(resp, row, "COD SM", "preencher_sm")
+        else:
+            self._tratar_resposta_api(resp, row, "SM EFET.", "efetivacao_sm")
 
     def _tratar_resposta_api(self, resp, row: Dict[str, Any], target_col: str, job_type: str):
         if not getattr(resp, "ok", False):
@@ -233,12 +237,12 @@ class WorkerSM:
     def iniciar_consumo(self):
         logger.info("="*60)
         logger.info(f"Worker API iniciado.")
-        logger.info(f"Ouvindo filas: {self.q_pre_sm},  {self.q_efetivacao}, {self.q_cancelar_pre_sm} e {self.q_refazer_pre_sm}")
+        logger.info(f"Ouvindo filas: {self.q_pre_sm},  {self.q_efetivacao}, {self.q_cancelar_pre_sm}, {self.q_refazer_pre_sm} e {self.q_preencher_sm}")
         logger.info("="*60)
 
         while True:
             try:
-                item = self.r_filas.blpop([self.q_pre_sm, self.q_efetivacao, self.q_cancelar_pre_sm, self.q_refazer_pre_sm], timeout=0)
+                item = self.r_filas.blpop([self.q_pre_sm, self.q_efetivacao, self.q_cancelar_pre_sm, self.q_refazer_pre_sm, self.q_preencher_sm], timeout=0)
 
                 if item:
                     fila_origem, payload_str = item
@@ -249,10 +253,14 @@ class WorkerSM:
                         self.processar_single_pre_sm(linha_planilha)
                     elif fila_origem == self.q_efetivacao:
                         self.processar_single_efetivacao(linha_planilha)
+                    elif fila_origem == self.q_preencher_sm:
+                        self.processar_single_efetivacao(linha_planilha, preencher_sm=True)
                     elif fila_origem == self.q_cancelar_pre_sm:
                         self.cancelar_single_pre_sm(linha_planilha)
                     elif fila_origem == self.q_refazer_pre_sm:
                         self.refazer_single_pre_sm(linha_planilha)
+                    else:
+                        print(f"Fila desconhecida: {fila_origem}")
 
             except json.JSONDecodeError:
                 logger.error("Erro ao decodificar JSON da fila do Redis.")

@@ -5,15 +5,9 @@ from playwright.sync_api import Locator, TimeoutError, Page, expect
 from fluxos.fluxo_login import fluxo_login
 from typing import List, Dict
 from loguru import logger
-import json
-import os
+from utils.timeouts import get_page_reload_timeout
 
-# Carrega configurações de timeout
-config_path = os.path.join(os.path.dirname(__file__), "config.json")
-with open(config_path, "r", encoding="utf-8") as f:
-    config = json.load(f)
-
-PAGE_RELOAD_TIMEOUT = config.get("timeout_settings", {}).get("page_reload_ms", 45000)
+PAGE_RELOAD_TIMEOUT = get_page_reload_timeout()
 
 def garantir_pagina_consulta(
     page: Page,

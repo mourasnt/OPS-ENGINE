@@ -203,6 +203,23 @@ def iniciar_writer(config):
                     batch_append_rows.append(dados_linha)
                     logger.debug(f"APPEND: Novo log de erro adicionado ao lote: {dados_linha[1]}")
 
+                elif tipo_job == "UPDATE_CELLS_SPARSE":
+                    linha = int(payload['row'])
+                    colunas = payload['colunas']
+                    valores = payload['novos_valores']
+                    
+                    for coluna, valor in zip(colunas, valores):
+                        col_idx = header_map.get(coluna)
+                        if col_idx:
+                            cell_ref = gspread.utils.rowcol_to_a1(linha, col_idx)
+                            try:
+                                ws_main.update_acell(cell_ref, str(valor))
+                                logger.debug(f"SPARSE UPDATE: {cell_ref} = '{valor}'")
+                            except Exception as e:
+                                logger.error(f"SPARSE UPDATE falhou em {cell_ref}: {e}")
+                        else:
+                            logger.warning(f"SPARSE UPDATE: Coluna '{coluna}' não encontrada no mapa.")
+
                 else:
                     logger.warning(f"Job recebido com tipo desconhecido: '{tipo_job}'")
 

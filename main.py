@@ -80,26 +80,24 @@ def executar_fluxo(nome_fluxo: str, funcao_fluxo, config: Dict[str, Any]):
             page.goto("https://portal.emiteai.com.br/#/login")
 
             login_ok = False
-            for login_attempt in range(1, 4):
-                logger.info(f"[{nome_fluxo}] Tentativa de login {login_attempt}/3...")
-                login_ok = fluxo_login(page=page, usuario=USUARIO, senha=SENHA)
-                if login_ok:
-                    logger.success(f"[{nome_fluxo}] Login realizado com sucesso.")
-                    break
-                
-                logger.warning(f"[{nome_fluxo}] Login falhou na tentativa {login_attempt}/3.")
-                if login_attempt < 3:
-                    wait_time = 30 * login_attempt
-                    logger.info(f"[{nome_fluxo}] Aguardando {wait_time}s...")
+            login_attempt = 0
+            while not login_ok:
+                login_attempt += 1
+                if login_attempt > 1:
+                    wait_time = min(60, 30 * (login_attempt - 1))
+                    logger.info(f"[{nome_fluxo}] Aguardando {wait_time}s antes de tentar novamente...")
                     time.sleep(wait_time)
                     try:
                         page.goto("https://portal.emiteai.com.br/#/login", timeout=45000)
                     except Exception as nav_err:
                         logger.error(f"[{nome_fluxo}] Erro ao recarregar página: {nav_err}")
-            
-            if not login_ok:
-                logger.critical(f"[{nome_fluxo}] Falha total de login. Thread será encerrada.")
-                return
+                
+                logger.info(f"[{nome_fluxo}] Tentativa de login {login_attempt}...")
+                login_ok = fluxo_login(page=page, usuario=USUARIO, senha=SENHA)
+                if login_ok:
+                    logger.success(f"[{nome_fluxo}] Login realizado com sucesso.")
+                else:
+                    logger.warning(f"[{nome_fluxo}] Login falhou na tentativa {login_attempt}. Retentando...")
             
             funcao_fluxo(page, config) 
             logger.info(f"[{nome_fluxo}] Loop de consumo encerrado.")
@@ -129,9 +127,17 @@ def executor_inteligente(nome_fluxo: str, arg2, arg3=None):
     Roteador dinâmico: Decide qual executor base usar lendo o REGISTRY.
     Normaliza nomes vindos do ThreadPoolManager para encontrar a chave correta.
     """
-    # Normalização: "conferencia_worker_1" -> "conferencia"
-    if "gerenciamento_risco" in nome_fluxo:
+    # Normalização: "conferencia_worker_1" ou "conferencia_worker_recovery_123" -> "conferencia"
+    nome_normalizado = nome_fluxo.lower().strip()
+    
+    if "gerenciamento_risco" in nome_normalizado:
         nome_base = "gerenciamento_risco"
+    elif "conferencia" in nome_normalizado:
+        nome_base = "conferencia"
+    elif "emissao" in nome_normalizado:
+        nome_base = "emissao"
+    elif "manifesto" in nome_normalizado:
+        nome_base = "manifesto"
     else:
         nome_base = nome_fluxo.split("_")[0]
 
@@ -218,16 +224,6 @@ def main():
             status_display=status_display, 
         )
         config['thread_pool_manager'] = pool_manager
-
-        # --- Geração Dinâmica de Threads Iniciais ---
-        for nome_fluxo, dados in WORKERS_REGISTRY.items():
-            t = threading.Thread(
-                target=executor_inteligente, 
-                args=(nome_fluxo, dados["func"], config), 
-                daemon=True,
-                name=f"Thread-{nome_fluxo}-Inicial"
-            )
-            t.start()
 
         pool_manager.iniciar()
         
