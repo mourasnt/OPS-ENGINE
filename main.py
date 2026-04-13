@@ -227,6 +227,15 @@ def main():
 
         pool_manager.iniciar()
         
+        sm_thread = threading.Thread(
+            target=executor_inteligente,
+            args=("gerenciamento_risco",),
+            daemon=True,
+            name="Thread-GerenciamentoRisco"
+        )
+        sm_thread.start()
+        logger.success("Thread de Gerenciamento de Risco (SM) iniciada.")
+        
         logger.info("Sistema em execução. Pressione Ctrl+C para parar.")
         pool_manager.aguardar_encerramento()
 
