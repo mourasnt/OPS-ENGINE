@@ -34,7 +34,8 @@ COPY --chown=opsuser:opsgroup main.py poller.py writer.py ./
 # 5. Cria a pasta de logs e garante que TODO o diretório /app pertence ao 'opsuser'
 # Isso é crucial para o Playwright conseguir ler o Firefox e o Writer salvar arquivos de erro
 RUN mkdir -p logs && \
-    chown -R opsuser:opsgroup /app
+    chown -R opsuser:opsgroup /app && \
+    chmod -R 777 /app/logs
 
 # 6. Troca definitivamente para o usuário seguro
 USER opsuser
