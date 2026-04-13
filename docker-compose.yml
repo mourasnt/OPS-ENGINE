@@ -6,7 +6,6 @@ version: "3.8"
 x-app-base: &app-base
   build: .
   image: ops-engine-app:1.0
-  user: "1000:1000"
   restart: unless-stopped
   depends_on:
     redis:
