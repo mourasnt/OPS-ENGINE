@@ -1,15 +1,9 @@
 from playwright.sync_api import Page, TimeoutError
 from loguru import logger
-import json
-import os
+from utils.timeouts import get_login_timeout, get_page_reload_timeout
 
-# Carrega configurações de timeout
-config_path = os.path.join(os.path.dirname(__file__), "..", "utils", "config.json")
-with open(config_path, "r", encoding="utf-8") as f:
-    config = json.load(f)
-
-LOGIN_NAVIGATION_TIMEOUT = config.get("timeout_settings", {}).get("login_navigation_ms", 45000)
-PAGE_RELOAD_TIMEOUT = config.get("timeout_settings", {}).get("page_reload_ms", 45000)
+LOGIN_NAVIGATION_TIMEOUT = get_login_timeout()
+PAGE_RELOAD_TIMEOUT = get_page_reload_timeout()
 
 def fluxo_login(page: Page, usuario: str, senha: str, max_tentativas: int = 3, output_path: str = "dados/auth.json") -> bool:
 

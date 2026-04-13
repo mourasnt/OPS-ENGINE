@@ -278,7 +278,7 @@ def conferir_lt(page: Page, carga: Carga) -> dict:
         with TimeoutDetector("Preencher campos restantes", max_seconds=25, job_id=carga.numero_lt):
             
             # ATUALIZADO: Usando label para Tipos de CT-e
-            if not selecionar_mui_select_por_label(page, "Tipos de CT-e a Gerar\*", "Redespacho Intermediário", timeout=8000):
+            if not selecionar_mui_select_por_label(page, "Tipos de CT-e a Gerar", "Redespacho Intermediário", timeout=8000):
                 logger.error(f"[Worker Conferência] Opção 'Redespacho Intermediário' não encontrada - LT {carga.numero_lt}.")
 
             # ATUALIZADO: Usando label para Tipo de Tomador
@@ -316,7 +316,7 @@ def conferir_lt(page: Page, carga: Carga) -> dict:
             transportadora_input = page.get_by_role("textbox", name="Transportadora*")
             transportadora_input.clear()
             transportadora_input.type("3ZX", delay=50)
-            if not clicar_option(page, "34.790.798/0001-34 - 3ZX SP", exact=True, timeout=12000):
+            if not clicar_option(page, "34.790.798/0001-34 - 3ZX", exact=True, timeout=12000):
                 logger.error(f"[Worker Conferência] Opção transportadora 3ZX não encontrada - LT {carga.numero_lt}.")
 
             tipo_veiculo_input = page.get_by_role("textbox", name="Tipo de Veículo")

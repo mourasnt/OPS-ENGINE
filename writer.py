@@ -114,10 +114,10 @@ def obter_mapa_cabecalho(worksheet, linha_cabecalho):
 # --- LÓGICA PRINCIPAL DO WRITER ---
 def iniciar_writer(config):
 
-    creds_path = os.environ.get('GOOGLE_APPLICATION_CREDENTIALS') or config.get('creds_path')
+    creds_path = os.environ.get('GOOGLE_APPLICATION_CREDENTIALS')
     # Validação de arquivo de credenciais
     if not creds_path or not os.path.exists(creds_path):
-        logger.critical("Arquivo de credenciais do Google não encontrado. Defina GOOGLE_APPLICATION_CREDENTIALS ou atualize o config.json para apontar para o JSON.")
+        logger.critical("Arquivo de credenciais do Google não encontrado")
         return
 
     main_sheet_cfg = config.get('main_sheet', {})
@@ -130,9 +130,9 @@ def iniciar_writer(config):
     error_ws_name = error_sheet_cfg.get('worksheet_name')
 
     redis_cfg = config.get('redis_settings', {})
-    r_host = redis_cfg.get('host')
-    r_port = redis_cfg.get('port')
-    r_db = redis_cfg.get('db')
+    r_host = os.environ.get('REDIS_HOST')
+    r_port = int(os.environ.get('REDIS_PORT'))
+    r_db = redis_cfg.get('db_fila')
     fila_resultados = redis_cfg.get('results_queue')
 
     writer_cfg = config.get('writer_settings', {})
@@ -202,6 +202,23 @@ def iniciar_writer(config):
                     dados_linha = payload['dados_linha']
                     batch_append_rows.append(dados_linha)
                     logger.debug(f"APPEND: Novo log de erro adicionado ao lote: {dados_linha[1]}")
+
+                elif tipo_job == "UPDATE_CELLS_SPARSE":
+                    linha = int(payload['row'])
+                    colunas = payload['colunas']
+                    valores = payload['novos_valores']
+                    
+                    for coluna, valor in zip(colunas, valores):
+                        col_idx = header_map.get(coluna)
+                        if col_idx:
+                            cell_ref = gspread.utils.rowcol_to_a1(linha, col_idx)
+                            try:
+                                ws_main.update_acell(cell_ref, str(valor))
+                                logger.debug(f"SPARSE UPDATE: {cell_ref} = '{valor}'")
+                            except Exception as e:
+                                logger.error(f"SPARSE UPDATE falhou em {cell_ref}: {e}")
+                        else:
+                            logger.warning(f"SPARSE UPDATE: Coluna '{coluna}' não encontrada no mapa.")
 
                 else:
                     logger.warning(f"Job recebido com tipo desconhecido: '{tipo_job}'")

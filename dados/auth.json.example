@@ -1,8 +1,0 @@
-{
-  "note": "This file is an example of the authentication/cookies file used by the RPA login flow.",
-  "warning": "Do NOT commit real session cookies or tokens to the repository. Store them securely or generate them at runtime via a login step.",
-  "example": {
-    "cookies": [],
-    "origins": []
-  }
-}

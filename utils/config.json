@@ -8,18 +8,27 @@
     "spreadsheet_id": "1yAIT7Aj6OTGY7jhtm4wXx-FZrPYmT7d_sG1UdvQjhoI",
     "worksheet_name": "Página1"
   },
+  "locations_sheet": {
+    "spreadsheet_id": "1uiY_Zvqa8lzln0p-Q_3WAjwDfkPE-E9DsvWhQDXtU3k",
+    "worksheet_name": "BASES"
+  },
   "creds_path": "dados/credentials.json",
 
   "redis_settings": {
-    "db": 3,
-    "host": "redis-emiteai-manifestos",
-    "port": 6379,
+    "db_fila": 3,
+    "db_state": 4,
+    "db_bases": 5,
     "results_queue": "fila:resultados",
     "conference_queue": "fila:conferencia",
     "emission_queue": "fila:emissao",
     "control_set": "jobs_em_progresso",
     "manifesto_queue": "fila:manifesto",
-    "manifesto_set": "jobs_manifesto_em_progresso"
+    "manifesto_set": "jobs_manifesto_em_progresso",
+    "pre_sm_queue": "fila:pre_sm",
+    "cancelar_pre_sm_queue": "fila:cancelar_pre_sm",
+    "refazer_pre_sm_queue": "fila:refazer_pre_sm",
+    "efetivacao_queue": "fila:efetivacao_sm",
+    "preencher_sm_queue": "fila:preencher_sm"
   },
 
   "writer_settings": {
@@ -33,6 +42,19 @@
     "statusConferir": [
       "ENTREGA FINALIZADA",
       "AGUARDANDO DESCARGA",
+      "EM TRANSITO"
+    ]
+  },
+
+  "sm_settings": {
+    "HR_ANTES_ETA": 7,
+    "status_array_pre_sm": [
+      "CONFIRMADO",
+      "AGUARDANDO CARREGAMENTO",
+      "PRÉ AGENDADO"
+    ],
+    "status_array_efetivacao": [
+      "AGUARDANDO CARREGAMENTO",
       "EM TRANSITO"
     ]
   },
@@ -61,5 +83,5 @@
   
   "default_frete": 100,
   "default_pedagio": 0,
-  "acao_valor_invalido": "preencher"
+  "acao_valor_invalido": "pular_linha"
 }

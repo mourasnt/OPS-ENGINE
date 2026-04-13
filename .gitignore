@@ -8,6 +8,7 @@ logs/
 
 dados/credentials.json
 dados/auth.json
+.env
 
 # Editor
 .vscode/
