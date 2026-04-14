@@ -96,8 +96,8 @@ class EmissaoWorker(BaseWorker):
             logger.error(f"[Worker Emissão] Card ou status não encontrado para LT {numero_lt}.")
             return
 
-        colunas_update = ["Data Verificação"]
-        valores_update = [data_agora]
+        colunas_update = []
+        valores_update = []
 
         # Processamento por status
         if status_card == "ag._revisão":
@@ -110,15 +110,13 @@ class EmissaoWorker(BaseWorker):
                 
                 if resultado_rpa["status"] == "sucesso":
                     logger.success(f"[Worker Emissão] [LT {numero_lt}] Revisão concluída.")
-                    colunas_update.extend(["Data Revisão"])
-                    valores_update.extend([data_agora])
                 else:
                     logger.error(f"[Worker Emissão] [LT {numero_lt}] Falha na revisão: {resultado_rpa.get('motivo')}")
             
             elif tipo_card == "nfs":
                 logger.info(f"[Worker Emissão] [LT {numero_lt}] É uma Nota de Serviço (NFS).")
-                colunas_update.extend(["Status de emissão", "CTE", "Data Revisão"])
-                valores_update.extend(["Nota de Serviço", "Nota de Serviço", data_agora])
+                colunas_update.extend(["Status de emissão", "CTE"])
+                valores_update.extend(["Nota de Serviço", "Nota de Serviço"])
 
         elif status_card in ["liberado", "inconsistente", "ag._emissão"]:
             # Processa CT-e
