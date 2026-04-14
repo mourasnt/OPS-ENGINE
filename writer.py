@@ -186,10 +186,14 @@ def iniciar_writer(config):
                 tipo_job = job.get('tipo_job')
                 payload = job.get('payload')
                 
+                # DEBUG: Log do payload completo
+                logger.info(f"[DEBUG] Job recebido - tipo_job: {tipo_job}, payload: {json.dumps(payload, ensure_ascii=False)}")
+                
                 if tipo_job == "UPDATE_SHEET":
                     linha = int(payload['row'])
                     colunas = payload['colunas']
                     valores = payload['novos_valores']
+                    logger.info(f"[DEBUG] UPDATE_SHEET - Row: {linha}, Colunas: {colunas}, Valores: {valores}")
                     
                     for coluna, valor in zip(colunas, valores):
                         col_idx = header_map.get(coluna)
@@ -232,6 +236,9 @@ def iniciar_writer(config):
                 
                 # --- 4. ENVIAR LOTE DE UPDATES ---
                 if batch_update_cells:
+                    # DEBUG: Log das células que serão enviadas
+                    debug_cells = [(f"R{c.row}C{c.col}", c.value[:30] if c.value and len(c.value) > 30 else c.value) for c in batch_update_cells[:10]]
+                    logger.info(f"[DEBUG] cells a enviar (primeiras 10): {debug_cells}")
                     logger.info(f"Enviando lote de {len(batch_update_cells)} CÉLULAS para atualização...")
                     try:
                         resp = send_update_cells(ws_main, batch_update_cells)

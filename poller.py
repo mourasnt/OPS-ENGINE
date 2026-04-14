@@ -458,19 +458,17 @@ def iniciar_poller(config):
                         cont_efetivacao += 1
                     else:
                         logger.debug(f"Job {lt} (Efetivação SM) já está em progresso. Pulando.")
-                """
-                #Temporario
-                if status in STATUS_EFETIVACAO and sm_efet_val == 'OK' and cod_sm in ("", "None", None, "-", " ", "  "):
+                
+                # Fila: PREENCHER COD SM (quando SM EFET está OK mas COD SM está vazio)
+                if pre_sm_val.isdigit() and sm_efet_val == 'OK' and cod_sm in ("", "None", None, "-", " ", "  ") and status in STATUS_EFETIVACAO:
                     foi_adicionado = r_filas.sadd(s_controle, id_3zx)
-
                     if foi_adicionado == 1:
                         job_payload = {'row': linha['original_row_number'], 'data': linha}
                         r_filas.rpush(q_preenchersm, json.dumps(job_payload))
-                        logger.info(f"Novo job de EFETIVAÇÃO SM para LT {lt} (Linha {linha['original_row_number']}) - Temporário para casos sem COD SM")
+                        logger.info(f"Novo job de PREENCHER COD SM para LT {lt} (Linha {linha['original_row_number']})")
                         cont_preencher_sm += 1
                     else:
-                        logger.debug(f"Job {lt} (Efetivação SM - Temporário) já está em progresso. Pulando.")
-                """
+                        logger.debug(f"Job {lt} (Preencher COD SM) já está em progresso. Pulando.")
 
                 # Fila: Conferência
                 if statusEmissao == 'Pendente' and status in STATUS_CONFERIR:
