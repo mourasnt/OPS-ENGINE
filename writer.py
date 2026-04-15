@@ -173,6 +173,11 @@ def iniciar_writer(config):
     batch_update_cells = []
     batch_append_rows = []
     
+    # --- Contadores de tentativas para retry ---
+    attempt_count_cells = 0
+    attempt_count_rows = 0
+    MAX_ATTEMPTS = 3
+    
     while True:
         try:
             # 1. OUVIR A FILA
@@ -240,6 +245,7 @@ def iniciar_writer(config):
                     debug_cells = [(f"R{c.row}C{c.col}", c.value[:30] if c.value and len(c.value) > 30 else c.value) for c in batch_update_cells[:10]]
                     logger.info(f"[DEBUG] cells a enviar (primeiras 10): {debug_cells}")
                     logger.info(f"Enviando lote de {len(batch_update_cells)} CÉLULAS para atualização...")
+                    attempt_count_cells += 1
                     try:
                         resp = send_update_cells(ws_main, batch_update_cells)
                         # Log response details at INFO level if it contains useful data
@@ -249,22 +255,31 @@ def iniciar_writer(config):
                             logger.debug("Resposta do update_cells não serializável para log.")
 
                         batch_update_cells.clear()
+                        attempt_count_cells = 0  # Reset contador ao成功了
                         logger.success("Lote de CÉLULAS enviado com sucesso.")
                     except Exception as ex:
                         err = _extract_api_error(ex)
-                        logger.exception(f"Falha ao enviar lote de CÉLULAS. Mantendo no buffer para tentativa futura. Erro API: {err}")
-                        # Persiste o batch para reprocessamento manual
-                        try:
-                            payload = [{'row': c.row, 'col': c.col, 'value': c.value} for c in batch_update_cells]
-                        except Exception:
-                            payload = str(batch_update_cells[:50])
-                        persist_failed_batch('update_cells', payload, error=err)
-                        time.sleep(30)
-                        # Não limpar o batch: tentaremos novamente no próximo ciclo
+                        # Exponential backoff: 10s → 20s → 30s
+                        wait_time = min(10 * attempt_count_cells, 30)
+                        logger.exception(f"Falha ao enviar lote de CÉLULAS (tentativa {attempt_count_cells}/{MAX_ATTEMPTS}). Erro API: {err}. Aguardando {wait_time}s...")
+                        time.sleep(wait_time)
+                        
+                        if attempt_count_cells >= MAX_ATTEMPTS:
+                            # Limite atingido: persiste e limpa o batch
+                            logger.critical(f"Lote de CÉLULAS falhou após {MAX_ATTEMPTS} tentativas. Descartando batch...")
+                            try:
+                                payload = [{'row': c.row, 'col': c.col, 'value': c.value} for c in batch_update_cells]
+                            except Exception:
+                                payload = str(batch_update_cells[:50])
+                            persist_failed_batch('update_cells', payload, error=err)
+                            batch_update_cells.clear()
+                            attempt_count_cells = 0
+                        # Se não atingiu limite, mantém o batch para próxima tentativa
                 
                 # --- 5. ENVIAR LOTE DE APPENDS ---
                 if batch_append_rows:
                     logger.info(f"Enviando lote de {len(batch_append_rows)} LINHAS para log de erros...")
+                    attempt_count_rows += 1
                     try:
                         resp = send_append_rows(ws_errors, batch_append_rows)
                         try:
@@ -273,18 +288,26 @@ def iniciar_writer(config):
                             logger.debug("Resposta do append_rows não serializável para log.")
 
                         batch_append_rows.clear()
+                        attempt_count_rows = 0  # Reset contador ao成功了
                         logger.success("Lote de LINHAS enviado com sucesso.")
                     except Exception as ex:
                         err = _extract_api_error(ex)
-                        logger.exception(f"Falha ao enviar lote de LINHAS. Mantendo no buffer para tentativa futura. Erro API: {err}")
-                        # Persiste o batch para reprocessamento manual
-                        try:
-                            payload = batch_append_rows
-                        except Exception:
-                            payload = str(batch_append_rows[:20])
-                        persist_failed_batch('append_rows', payload, error=err)
-                        time.sleep(30)
-                        # Não limpar o batch: tentaremos novamente no próximo ciclo
+                        # Exponential backoff: 10s → 20s → 30s
+                        wait_time = min(10 * attempt_count_rows, 30)
+                        logger.exception(f"Falha ao enviar lote de LINHAS (tentativa {attempt_count_rows}/{MAX_ATTEMPTS}). Erro API: {err}. Aguardando {wait_time}s...")
+                        time.sleep(wait_time)
+                        
+                        if attempt_count_rows >= MAX_ATTEMPTS:
+                            # Limite atingido: persiste e limpa o batch
+                            logger.critical(f"Lote de LINHAS falhou após {MAX_ATTEMPTS} tentativas. Descartando batch...")
+                            try:
+                                payload = batch_append_rows
+                            except Exception:
+                                payload = str(batch_append_rows[:20])
+                            persist_failed_batch('append_rows', payload, error=err)
+                            batch_append_rows.clear()
+                            attempt_count_rows = 0
+                        # Se não atingiu limite, mantém o batch para próxima tentativa
 
         except gspread.exceptions.APIError as e:
             logger.error(f"Erro de API do Google: {e}. Tentando novamente em 60s...")

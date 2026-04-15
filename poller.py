@@ -337,6 +337,9 @@ def iniciar_poller(config):
     STATUS_EFETIVACAO = sm_cfg.get('status_array_efetivacao')
     HR_ANTES_ETA = sm_cfg.get('HR_ANTES_ETA', 7)
 
+    # Campos que disparam rebuild do Pré-SM (mudanças relevantes)
+    CAMPOS_REBUILD_PRE_SM = ["Origem", "Destino", "Motorista", "Placa", "Placa 2", "ETA Origem", "ETA Destino", "CPT"]
+
 
     creds_path = os.environ.get('GOOGLE_APPLICATION_CREDENTIALS') or config.get('creds_path')
 
@@ -408,7 +411,7 @@ def iniciar_poller(config):
                 mudancas = verificar_mudancas_cdc(r_state, linha, id_3zx, campos_monitorados)
 
                 # --- 1. Lógica de Limpeza ---
-                if statusEmissao in STATUS_EMISSAO_TERMINAIS and (mdfe_baixado == "SIM" or mdfe == False ):
+                if statusEmissao in STATUS_EMISSAO_TERMINAIS and (mdfe_baixado == "SIM" or not mdfe):
                     foi_removido = r_filas.srem(s_controle, id_3zx)
                     if foi_removido == 1:
                         logger.debug(f"Job {lt} concluído. Removido do set de controle.")
@@ -437,8 +440,8 @@ def iniciar_poller(config):
                     else:
                         logger.debug(f"Job {lt} (Cancelar Pré-SM) já está em progresso. Pulando.")
 
-                # Fila: Refazer PRÉ-SM (apenas se houver mudanças e ainda não tiver SM efetivada)
-                elif pre_sm_val.isdigit() and sm_efet_val == 'PENDENTE' and status in STATUS_PRE_SM and mudancas and any(mudancas.get(coluna) for coluna in campos_monitorados if coluna in ("Origem", "Destino", "Motorista", "Placa", "Placa 2", "ETA Origem", "ETA Destino", "CPT", "CPF")):
+                # Fila: Refazer PRÉ-SM (apenas se houver mudanças nos campos relevantes)
+                elif pre_sm_val.isdigit() and sm_efet_val == 'PENDENTE' and status in STATUS_PRE_SM and mudancas and any(mudancas.get(c) for c in CAMPOS_REBUILD_PRE_SM):
                     foi_adicionado = r_filas.sadd(s_controle, id_3zx)
                     if foi_adicionado == 1:
                         job_payload = {'row': linha['original_row_number'], 'data': linha}
