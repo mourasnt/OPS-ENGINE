@@ -215,10 +215,10 @@ def verificar_pendencias_api(config, r_filas):
                     colunas_alvos = ["PRÉ SM", "SM EFET."]
                 elif job_type == "efetivacao_sm":
                     colunas_alvos = ["COD SM", "SM EFET."]
-                    tipo_job_writer = "UPDATE_CELLS_SPARSE"
                 elif job_type == "preencher_sm":
                     colunas_alvos = ["COD SM"]
-                valores_finais = []
+                else:
+                    print(f"Job type {job_type} não reconhecido para ID {id_3zx}. Verificando resultado da API mesmo assim...")
                 
                 if api_result.get("sucesso"):
                     if job_type == "criar_pre_sm":
@@ -257,12 +257,16 @@ def verificar_pendencias_api(config, r_filas):
                     history.update_job_status(id_3zx, job_id_clean, rownum, "ERROR", err)
 
                 # Manda ordem para o Writer preencher a planilha
-                job_writer = {
-                    "tipo_job": tipo_job_writer,
-                    "payload": {"row": int(rownum), "colunas": colunas_alvos, "novos_valores": valores_finais}
-                }
-                r_filas.rpush(fila_resultados, json.dumps(job_writer))
-                
+                # Validar: só enviar se houver colunas e valores
+                if not colunas_alvos or not valores_finais:
+                    logger.warning(f"[API] Job {job_type} para ID {id_3zx} ignorado: colunas={colunas_alvos}, valores={valores_finais}")
+                else:
+                    job_writer = {
+                        "tipo_job": tipo_job_writer,
+                        "payload": {"row": int(rownum), "colunas": colunas_alvos, "novos_valores": valores_finais}
+                    }
+                    r_filas.rpush(fila_resultados, json.dumps(job_writer))
+                 
                 # Libera o job do Set de Controle
                 r_filas.srem(s_controle, id_3zx)
 

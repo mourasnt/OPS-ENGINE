@@ -1,0 +1,367 @@
+{
+  "timestamp": "20260415T004433Z",
+  "kind": "update_cells",
+  "data": [
+    {
+      "row": 17929,
+      "col": 53,
+      "value": "8655953"
+    },
+    {
+      "row": 18028,
+      "col": 53,
+      "value": "8654783"
+    },
+    {
+      "row": 17928,
+      "col": 53,
+      "value": "8657612"
+    },
+    {
+      "row": 18132,
+      "col": 16,
+      "value": "9315590"
+    },
+    {
+      "row": 17930,
+      "col": 53,
+      "value": "8657953"
+    },
+    {
+      "row": 18075,
+      "col": 53,
+      "value": "8651521"
+    },
+    {
+      "row": 18017,
+      "col": 53,
+      "value": "8651560"
+    },
+    {
+      "row": 18928,
+      "col": 16,
+      "value": "ERRO: Erro de comunicação com o serviço de rotas: 504 Server Error: Gateway Time-out for url: http://integra.rastergr.com.br:8888/datasnap/rest/TWebService/%22getRotas%22/"
+    },
+    {
+      "row": 17906,
+      "col": 53,
+      "value": "8657540"
+    },
+    {
+      "row": 17904,
+      "col": 53,
+      "value": "8656548"
+    },
+    {
+      "row": 17931,
+      "col": 53,
+      "value": "8656222"
+    },
+    {
+      "row": 18930,
+      "col": 16,
+      "value": "ERRO: Erro retornado pela API da Raster: O veiculo ja possui SM iniciada ou em aberto"
+    },
+    {
+      "row": 18902,
+      "col": 53,
+      "value": "8657940"
+    },
+    {
+      "row": 18906,
+      "col": 53,
+      "value": "8653116"
+    },
+    {
+      "row": 18076,
+      "col": 53,
+      "value": "8650910"
+    },
+    {
+      "row": 18002,
+      "col": 53,
+      "value": "8654618"
+    },
+    {
+      "row": 18014,
+      "col": 16,
+      "value": "Cancelada"
+    },
+    {
+      "row": 18014,
+      "col": 17,
+      "value": "Cancelada"
+    },
+    {
+      "row": 18032,
+      "col": 53,
+      "value": "8651401"
+    },
+    {
+      "row": 17902,
+      "col": 53,
+      "value": "8656305"
+    },
+    {
+      "row": 18888,
+      "col": 53,
+      "value": "8650948"
+    },
+    {
+      "row": 18019,
+      "col": 53,
+      "value": "8654619"
+    },
+    {
+      "row": 17905,
+      "col": 53,
+      "value": "8657941"
+    },
+    {
+      "row": 18907,
+      "col": 53,
+      "value": "8654621"
+    },
+    {
+      "row": 17954,
+      "col": 53,
+      "value": "8654616"
+    },
+    {
+      "row": 17980,
+      "col": 16,
+      "value": "Cancelada"
+    },
+    {
+      "row": 17980,
+      "col": 17,
+      "value": "Cancelada"
+    },
+    {
+      "row": 18003,
+      "col": 53,
+      "value": "8655592"
+    },
+    {
+      "row": 18069,
+      "col": 53,
+      "value": "8651788"
+    },
+    {
+      "row": 17917,
+      "col": 53,
+      "value": "8657951"
+    },
+    {
+      "row": 17941,
+      "col": 53,
+      "value": "8655450"
+    },
+    {
+      "row": 18033,
+      "col": 53,
+      "value": "8651549"
+    },
+    {
+      "row": 18004,
+      "col": 53,
+      "value": "8655452"
+    },
+    {
+      "row": 17921,
+      "col": 53,
+      "value": "8657952"
+    },
+    {
+      "row": 17921,
+      "col": 53,
+      "value": "8657952"
+    },
+    {
+      "row": 17930,
+      "col": 53,
+      "value": "8657953"
+    },
+    {
+      "row": 17938,
+      "col": 53,
+      "value": "8656764"
+    },
+    {
+      "row": 17954,
+      "col": 53,
+      "value": "8654616"
+    },
+    {
+      "row": 17929,
+      "col": 53,
+      "value": "8655953"
+    },
+    {
+      "row": 18002,
+      "col": 53,
+      "value": "8654618"
+    },
+    {
+      "row": 17951,
+      "col": 53,
+      "value": "8658018"
+    },
+    {
+      "row": 17959,
+      "col": 53,
+      "value": "8657890"
+    },
+    {
+      "row": 17932,
+      "col": 53,
+      "value": "8657965"
+    },
+    {
+      "row": 18235,
+      "col": 16,
+      "value": "9315593"
+    },
+    {
+      "row": 17928,
+      "col": 53,
+      "value": "8657612"
+    },
+    {
+      "row": 17905,
+      "col": 53,
+      "value": "8657941"
+    },
+    {
+      "row": 17906,
+      "col": 53,
+      "value": "8657540"
+    },
+    {
+      "row": 17917,
+      "col": 53,
+      "value": "8657951"
+    },
+    {
+      "row": 18153,
+      "col": 16,
+      "value": "ERRO: Erro retornado pela API da Raster: O veiculo ja possui SM iniciada ou em aberto"
+    },
+    {
+      "row": 17955,
+      "col": 53,
+      "value": "8657483"
+    },
+    {
+      "row": 17941,
+      "col": 53,
+      "value": "8655450"
+    },
+    {
+      "row": 18924,
+      "col": 16,
+      "value": "ERRO: Erro de comunicação com o serviço de rotas: 504 Server Error: Gateway Time-out for url: http://integra.rastergr.com.br:8888/datasnap/rest/TWebService/%22getRotas%22/"
+    },
+    {
+      "row": 17904,
+      "col": 53,
+      "value": "8656548"
+    },
+    {
+      "row": 18062,
+      "col": 35,
+      "value": "Verificar Emissão"
+    },
+    {
+      "row": 18070,
+      "col": 53,
+      "value": "8657038"
+    },
+    {
+      "row": 18028,
+      "col": 53,
+      "value": "8654783"
+    },
+    {
+      "row": 18063,
+      "col": 53,
+      "value": "8657284"
+    },
+    {
+      "row": 18021,
+      "col": 53,
+      "value": "8657488"
+    },
+    {
+      "row": 18056,
+      "col": 53,
+      "value": "8658140"
+    },
+    {
+      "row": 18032,
+      "col": 53,
+      "value": "8651401"
+    },
+    {
+      "row": 18019,
+      "col": 53,
+      "value": "8654619"
+    },
+    {
+      "row": 18009,
+      "col": 53,
+      "value": "8657518"
+    },
+    {
+      "row": 18075,
+      "col": 53,
+      "value": "8651521"
+    },
+    {
+      "row": 18022,
+      "col": 53,
+      "value": "8656609"
+    },
+    {
+      "row": 18017,
+      "col": 53,
+      "value": "8651560"
+    },
+    {
+      "row": 18003,
+      "col": 53,
+      "value": "8655592"
+    },
+    {
+      "row": 18020,
+      "col": 53,
+      "value": "8657422"
+    },
+    {
+      "row": 18069,
+      "col": 53,
+      "value": "8651788"
+    },
+    {
+      "row": 18016,
+      "col": 53,
+      "value": "8657966"
+    },
+    {
+      "row": 18033,
+      "col": 53,
+      "value": "8651549"
+    },
+    {
+      "row": 18004,
+      "col": 53,
+      "value": "8655452"
+    },
+    {
+      "row": 18061,
+      "col": 53,
+      "value": "8657520"
+    }
+  ],
+  "error": "<Response [400]>"
+}

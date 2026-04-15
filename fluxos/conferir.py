@@ -13,8 +13,7 @@ from utils.watchdog import TimeoutDetector
 def normalizar_texto(texto: str) -> str:
     if not isinstance(texto, str):
         return ""
-    texto_sem_underscore = texto.replace('_', ' ')
-    texto_base = unidecode(texto_sem_underscore.lower())
+    texto_base = unidecode(texto.lower())
     texto_limpo = ' '.join(texto_base.split())
     return texto_limpo
 
@@ -27,6 +26,8 @@ def escolher_opcao_mais_parecida(page: Page, texto_busca: str):
         return False
 
     texto_busca_norm = normalizar_texto(texto_busca)
+    if not texto_busca_norm or texto_busca_norm == "":
+        return False
 
     opcoes_locator = page.locator("[role='option']")
     try:
