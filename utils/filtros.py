@@ -1,9 +1,11 @@
+import os
 from playwright.sync_api import TimeoutError, Page, expect
 import datetime
 import re
 from loguru import logger
 import time
 from utils.timeouts import get_page_reload_timeout
+from utils.fluxo_utils import _capturar_debug
 
 PAGE_RELOAD_TIMEOUT = get_page_reload_timeout()
 
@@ -76,15 +78,14 @@ def filtro_cargas(page: Page, numero_lt: str):
         raise
 
 def filtro_cards(page: Page, numero_lt: str):
+    logger.debug(f"[filtro_cards] INICIO - LT: {numero_lt}")
 
     def ir_para_inicio_input(locator_name):
         for _ in range(10):
             page.locator(f"input[name=\"{locator_name}\"]").press("ArrowLeft")
         return
-    
-    try:
 
-        # 1. Seletores
+    try:
         filtrar_button = page.get_by_role("button", name="Filtrar")
         data_inicial_input = page.locator("input[name=\"dataInicial\"]")
         data_final_input = page.locator("input[name=\"dataFinal\"]")
@@ -93,20 +94,25 @@ def filtro_cards(page: Page, numero_lt: str):
         salvar_dt_input = page.get_by_role("button", name="Salvar")
         pesquisar_button = page.get_by_role("button", name="Pesquisar")
 
-        # 2. Garante que a página está pronta
+        logger.debug(f"[filtro_cards]LOCALIZOU seleniums")
         expect(filtrar_button).to_be_visible(timeout=15000)
+        logger.debug(f"[filtro_cards] Botao Filtrar visivel")
 
-        # 3. Abre o painel de filtros
         if not data_inicial_input.is_visible():
+            logger.debug(f"[filtro_cards]Abrindo painel de filtros...")
             filtrar_button.click()
             expect(data_inicial_input).to_be_visible(timeout=5000)
+            logger.debug(f"[filtro_cards] Painel aberto")
+        else:
+            logger.debug(f"[filtro_cards] Painel ja estava aberto")
 
-        # 4. Preenche o formulário
         data_final = datetime.datetime.now()
         data_inicial = data_final - datetime.timedelta(days=60)
-        
+
         data_inicial_str = data_inicial.strftime("%m-%d-%YT00:00")
         data_final_str = data_final.strftime("%m-%d-%YT23:59")
+
+        logger.debug(f"[filtro_cards] Preenchendo datas: {data_inicial_str} ate {data_final_str}")
 
         data_inicial_input.click()
         data_inicial_input.fill("")
@@ -118,21 +124,41 @@ def filtro_cards(page: Page, numero_lt: str):
         ir_para_inicio_input("dataFinal")
         data_final_input.type(data_final_str)
 
+        logger.debug(f"[filtro_cards] Preenchendo LT no campo Valores...")
         dt_input.click()
         valores_dt_input.press("Backspace")
         valores_dt_input.type(numero_lt)
+        logger.debug(f"[filtro_cards] LT digitada: {numero_lt}")
         valores_dt_input.press("Enter")
         time.sleep(3)
+        logger.debug(f"[filtro_cards] Clicando Salvar...")
         salvar_dt_input.click()
 
-        # 5. Executa a pesquisa
+        logger.debug(f"[filtro_cards] Clicando Pesquisar...")
         pesquisar_button.click()
+        logger.debug(f"[filtro_cards] Aguardando networkidle...")
+
+        try:
+            _capturar_debug(page, "antes_pesquisar", numero_lt)
+        except Exception:
+            pass
+
         page.wait_for_load_state("networkidle", timeout=30000)
 
-        # 6. Fecha o painel
+        Cards_count = page.locator(".MuiGrid-root.MuiGrid-item.MuiGrid-grid-xs-12.MuiGrid-grid-sm-6").count()
+        logger.debug(f"[filtro_cards] Apos pesquisa - Total cards: {Cards_count}")
+
+        try:
+            _capturar_debug(page, "apos_pesquisar", numero_lt)
+        except Exception:
+            pass
+
         if data_inicial_input.is_visible():
+            logger.debug(f"[filtro_cards] Fechando painel...")
             filtrar_button.click()
             expect(data_inicial_input).to_be_hidden(timeout=5000)
+
+        logger.debug(f"[filtro_cards] FIM - LT: {numero_lt}")
 
     except TimeoutError as e:
         detalhe_erro = str(e).split('\n')[0]

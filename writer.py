@@ -83,6 +83,30 @@ def _extract_api_error(exc: Exception) -> str:
         return repr(exc)
 
 
+def fallback_update_cells(ws_main, cells_batch):
+    """Fallback: tenta enviar células uma a uma quando batch falha."""
+    logger.warning(f"[FALLBACK] Batch falhou. Tentando {len(cells_batch)} células individualmente...")
+
+    sucessos = 0
+    falhas = []
+
+    for cell in cells_batch:
+        for tentativa in range(3):
+            try:
+                ws_main.update_cells([cell], value_input_option='USER_ENTERED')
+                logger.debug(f"[FALLBACK] Célula R{cell.row}C{cell.col}: OK")
+                sucessos += 1
+                break
+            except Exception as ex:
+                if tentativa < 2:
+                    time.sleep(2 ** tentativa)
+                else:
+                    logger.error(f"[FALLBACK] Célula R{cell.row}C{cell.col} falhou: {ex}")
+                    falhas.append({'row': cell.row, 'col': cell.col, 'value': cell.value})
+
+    return {'sucessos': sucessos, 'falhas': falhas}
+
+
 def persist_failed_batch(kind: str, data, error: str = None):
     ts = datetime.datetime.utcnow().strftime('%Y%m%dT%H%M%SZ')
     path = f"logs/failed_{kind}_{ts}.json"
@@ -243,27 +267,35 @@ def iniciar_writer(config):
                     except Exception as ex:
                         err = _extract_api_error(ex)
                         err_lower = str(err).lower()
-                        
-                        # Erros irrecuperáveis: não tem смысла retries
-                        is_irrecuperable = any(keyword in err_lower for keyword in [
-                            "protected cell", 
-                            "protected object",
-                            "remove protection",
-                            "400"
-                        ])
-                        
-                        if is_irrecuperable:
-                            # Erro irrecuperável - limpar imediatamente sem retry adicional
-                            logger.critical(f"Erro irrecuperável ao enviar lote: {err}. Descartando batch imediatamente.")
-                            try:
-                                payload = [{'row': c.row, 'col': c.col, 'value': c.value} for c in batch_update_cells]
-                            except Exception:
-                                payload = str(batch_update_cells[:50])
-                            persist_failed_batch('update_cells', payload, error=err)
-                            batch_update_cells.clear()
+
+                        if "400" in err_lower:
+                            logger.warning(f"Batch falhou com erro 400. Ativando fallback célula por célula...")
+                            resultado_fallback = fallback_update_cells(ws_main, batch_update_cells)
+
+                            if not resultado_fallback.get('falhas'):
+                                logger.success(f"[FALLBACK] Todas {resultado_fallback['sucessos']} células enviada via fallback!")
+                                batch_update_cells.clear()
+                            else:
+                                logger.error(f"[FALLBACK] {len(resultado_fallback['falhas'])} células falharam definitivamente.")
+                                persist_failed_batch('update_cells', resultado_fallback['falhas'], error=err)
+                                batch_update_cells.clear()
                         else:
-                            # Erro potencialmente temporário - mantém batch (retry do decorador já fez 4 tentativas)
-                            logger.error(f"Lote de CÉLULAS falhou após retries do decorador: {err}. Batch mantido para próximo ciclo.")
+                            is_irrecuperable = any(keyword in err_lower for keyword in [
+                                "protected cell",
+                                "protected object",
+                                "remove protection"
+                            ])
+
+                            if is_irrecuperable:
+                                logger.critical(f"Erro irrecuperável ao enviar lote: {err}. Descartando batch imediatamente.")
+                                try:
+                                    payload = [{'row': c.row, 'col': c.col, 'value': c.value} for c in batch_update_cells]
+                                except Exception:
+                                    payload = str(batch_update_cells[:50])
+                                persist_failed_batch('update_cells', payload, error=err)
+                                batch_update_cells.clear()
+                            else:
+                                logger.error(f"Lote de CÉLULAS falhou: {err}. Batch mantido para próximo ciclo.")
                 
                 # --- 5. ENVIAR LOTE DE APPENDS ---
                 if batch_append_rows:
@@ -280,25 +312,40 @@ def iniciar_writer(config):
                     except Exception as ex:
                         err = _extract_api_error(ex)
                         err_lower = str(err).lower()
-                        
-                        # Erros irrecuperáveis
-                        is_irrecuperable = any(keyword in err_lower for keyword in [
-                            "protected cell", 
-                            "protected object",
-                            "remove protection",
-                            "400"
-                        ])
-                        
-                        if is_irrecuperable:
-                            logger.critical(f"Erro irrecuperável ao enviar lote de linhas: {err}. Descartando batch imediatamente.")
-                            try:
-                                payload = batch_append_rows
-                            except Exception:
-                                payload = str(batch_append_rows[:20])
-                            persist_failed_batch('append_rows', payload, error=err)
-                            batch_append_rows.clear()
+
+                        if "400" in err_lower:
+                            logger.warning(f"Lote de linhas falhou com erro 400. Tentando linha por linha...")
+                            resultado_fallback = []
+                            for linha in batch_append_rows:
+                                try:
+                                    ws_errors.append_rows([linha], value_input_option='USER_ENTERED')
+                                    logger.debug(f"[FALLBACK] Linha appendada OK")
+                                    resultado_fallback.append(True)
+                                except Exception as ex_inner:
+                                    logger.error(f"[FALLBACK] Falha ao appendar linha: {ex_inner}")
+                                    resultado_fallback.append(False)
+
+                            if all(resultado_fallback):
+                                logger.success("[FALLBACK] Todas linhas appendadas via fallback!")
+                                batch_append_rows.clear()
+                            else:
+                                falhas = [linha for i, linha in enumerate(batch_append_rows) if not resultado_fallback[i]]
+                                logger.error(f"[FALLBACK] {len(falhas)} linhas falharam definitivamente.")
+                                persist_failed_batch('append_rows', falhas, error=err)
+                                batch_append_rows.clear()
                         else:
-                            logger.error(f"Lote de LINHAS falhou após retries do decorador: {err}. Batch mantido para próximo ciclo.")
+                            is_irrecuperable = any(keyword in err_lower for keyword in [
+                                "protected cell",
+                                "protected object",
+                                "remove protection"
+                            ])
+
+                            if is_irrecuperable:
+                                logger.critical(f"Erro irrecuperável ao enviar lote de linhas: {err}. Descartando batch imediatamente.")
+                                persist_failed_batch('append_rows', batch_append_rows, error=err)
+                                batch_append_rows.clear()
+                            else:
+                                logger.error(f"Lote de LINHAS falhou: {err}. Batch mantido para próximo ciclo.")
 
         except gspread.exceptions.APIError as e:
             logger.error(f"Erro de API do Google: {e}. Tentando novamente em 60s...")

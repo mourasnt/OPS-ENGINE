@@ -1,3 +1,4 @@
+import os
 import time
 import datetime
 import re
@@ -58,30 +59,49 @@ def garantir_pagina_consulta(
     return False
 
 
-def goto_cards(page):
-    """Navega para a aba 'Cards' de emissão."""
-    # Garante que estamos na página de emissão
-    garantir_pagina_consulta(page, "https://portal.emiteai.com.br/#/emissor", '[role="tab"]:has-text("Cards")')
+def _capturar_debug(page,prefixo,numero_lt):
+    """Captura screenshot de debug."""
+    debug_dir=os.path.join(os.getcwd(),"debug_screenshots")
+    os.makedirs(debug_dir,exist_ok=True)
+    screenshot_path=os.path.join(debug_dir,f"{prefixo}_{numero_lt}.png")
+    try:
+        page.screenshot(path=screenshot_path)
+        logger.debug(f"[DEBUG] Screenshot salvo: {screenshot_path}")
+    except Exception as e:
+        logger.debug(f"[DEBUG] Falha ao capturar screenshot: {e}")
 
-    # Fecha modal de cookies ou popups se existirem
-    if page.locator("text=Aceitar").count() > 0:
-        logger.info("Fechando modal de cookies...")
+def goto_cards(page,numero_lt:str="unknown"):
+    """Navega para a aba 'Cards' de emissão."""
+    logger.debug(f"[goto_cards] INICIO - LT: {numero_lt} - URL: {page.url}")
+
+    garantir_pagina_consulta(page,"https://portal.emiteai.com.br/#/emissor",'[role="tab"]:has-text("Cards")')
+    logger.debug(f"[goto_cards]apos garantir_pagina - URL: {page.url}")
+
+    if page.locator("text=Aceitar").count()>0:
+        logger.debug(f"[goto_cards] Fechando modal cookies...")
         page.locator("text=Aceitar").click()
 
-    if page.get_by_role("button", name="close").count() > 0:
-        logger.info("Fechando modal de cookies...")
-        page.get_by_role("button", name="close").click()
+    if page.get_by_role("button",name="close").count()>0:
+        logger.debug(f"[goto_cards] Fechando modal close button...")
+        page.get_by_role("button",name="close").click()
 
-    # Clica na aba Cards com segurança
-    cards_tab = page.get_by_role("tab", name="Cards")
+    cards_tab=page.get_by_text("Cards")
     cards_tab.scroll_into_view_if_needed()
     cards_tab.click(force=True)
+    logger.debug(f"[goto_cards] Clique na aba Cards executado")
 
-    # Aguarda a aba Cards estar ativa
-    page.wait_for_function(
-        'document.querySelector("[role=tab][aria-selected=true]")?.textContent.includes("Cards")'
-    )
-    logger.debug("Aba 'Cards' carregada com sucesso.")
+    try:
+        cards_tab_active=page.locator('[role="tab"][aria-selected="true"]:has-text("Cards")')
+        cards_tab_active.wait_for(state="visible",timeout=10000)
+    except Exception:
+        page.wait_for_timeout(2000)
+
+    logger.debug(f"[goto_cards] FIM - URL: {page.url}")
+
+    try:
+        _capturar_debug(page,"goto_cards",numero_lt)
+    except Exception:
+        pass
 
 
 def identificar_tipo_card(card: Locator) -> str | None:
@@ -193,17 +213,27 @@ def verificar_status_mdfe(card: Locator) -> str | None:
 
 def analisar_status_emissao(page: Page, numero_lt: str) -> dict | None:
     """Orquestra a análise completa de um card de LT."""
+    logger.debug(f"[analisar_status_emissao] INICIO - LT: {numero_lt}")
     try:
         card_locator = page.locator(".MuiGrid-root.MuiGrid-item.MuiGrid-grid-xs-12.MuiGrid-grid-sm-6").filter(
             has_text=re.compile(rf"DT:\s*{re.escape(numero_lt)}")
         )
 
-        if card_locator.count() == 0:
-            return None
-        
-        card = card_locator.first
+        count = card_locator.count()
+        logger.debug(f"[analisar_status_emissao] Cards encontrados para DT:{numero_lt}: {count}")
 
-        # Chama as funções especialistas
+        if count == 0:
+            todos_cards = page.locator(".MuiGrid-root.MuiGrid-item.MuiGrid-grid-xs-12.MuiGrid-grid-sm-6").count()
+            logger.debug(f"[analisar_status_emissao] Total de cards na tela: {todos_cards}")
+            try:
+                _capturar_debug(page, "card_nao_encontrado", numero_lt)
+            except Exception:
+                pass
+            return None
+
+        card = card_locator.first
+        logger.debug(f"[analisar_status_emissao] Card encontrado, extraindo status...")
+
         status_principal = obter_status_principal_card(card)
         status_cte_detalhado = verificar_status_cte(card)
         status_mdfe_detalhado = verificar_status_mdfe(card)
@@ -212,14 +242,18 @@ def analisar_status_emissao(page: Page, numero_lt: str) -> dict | None:
             "status_card": status_principal,
             "status_cte": status_cte_detalhado,
             "status_mdfe": status_mdfe_detalhado,
-            "card": card # Passa o locator para o worker usar
+            "card": card
         }
-        
-        logger.success(f"Análise da LT {numero_lt} concluída")
+
+        logger.success(f"Análise da LT {numero_lt} concluída - status_mdfe: {status_mdfe_detalhado}")
         return resultado
 
     except Exception as e:
         logger.critical(f"Erro inesperado ao analisar o card da LT {numero_lt}: {e}")
+        try:
+            _capturar_debug(page, "erro_analise", numero_lt)
+        except Exception:
+            pass
         return None
 
 def obter_status_lt(page: Page, numero_lt: str) -> str:

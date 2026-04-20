@@ -506,7 +506,7 @@ def iniciar_poller(config):
                         logger.debug(f"Job {lt} (Emissão) já está em progresso. Pulando.")
 
                 # Fila: Encerramento de Manifesto (MDFe)
-                elif mdfe and mdfe_baixado != 'SIM' and statusEmissao in STATUS_EMISSAO_TERMINAIS and status in ("ENTREGA FINALIZADA", "AGUARDANDO DESCARGA"):
+                elif mdfe and mdfe_baixado != 'SIM' and status in ("ENTREGA FINALIZADA", "AGUARDANDO DESCARGA"):
                     logger.debug(f"MDFe {mdfe} encontrado para LT {lt}. Verificando se deve criar job de encerramento...")
                     manifesto_id = f"{mdfe}-{lt}"
                     foi_adicionado_manifesto = r_filas.sadd(s_manifesto, manifesto_id)
