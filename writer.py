@@ -6,7 +6,7 @@ import json
 import time
 from google.oauth2.service_account import Credentials
 from loguru import logger
-from utils.helpers import carregar_config 
+from utils.helpers import carregar_config, sanitizar_para_sheets 
 
 # --- CONFIGURAÇÃO DO LOGGER ---
 logger.remove()
@@ -81,6 +81,30 @@ def _extract_api_error(exc: Exception) -> str:
         return str(exc)
     except Exception:
         return repr(exc)
+
+
+def fallback_update_cells(ws_main, cells_batch):
+    """Fallback: tenta enviar células uma a uma quando batch falha."""
+    logger.warning(f"[FALLBACK] Batch falhou. Tentando {len(cells_batch)} células individualmente...")
+
+    sucessos = 0
+    falhas = []
+
+    for cell in cells_batch:
+        for tentativa in range(3):
+            try:
+                ws_main.update_cells([cell], value_input_option='USER_ENTERED')
+                logger.debug(f"[FALLBACK] Célula R{cell.row}C{cell.col}: OK")
+                sucessos += 1
+                break
+            except Exception as ex:
+                if tentativa < 2:
+                    time.sleep(2 ** tentativa)
+                else:
+                    logger.error(f"[FALLBACK] Célula R{cell.row}C{cell.col} falhou: {ex}")
+                    falhas.append({'row': cell.row, 'col': cell.col, 'value': cell.value})
+
+    return {'sucessos': sucessos, 'falhas': falhas}
 
 
 def persist_failed_batch(kind: str, data, error: str = None):
@@ -186,39 +210,33 @@ def iniciar_writer(config):
                 tipo_job = job.get('tipo_job')
                 payload = job.get('payload')
                 
+                # DEBUG: Log do payload completo
+                logger.info(f"[DEBUG] Job recebido - tipo_job: {tipo_job}, payload: {json.dumps(payload, ensure_ascii=False)}")
+                
                 if tipo_job == "UPDATE_SHEET":
                     linha = int(payload['row'])
                     colunas = payload['colunas']
                     valores = payload['novos_valores']
+                    logger.info(f"[DEBUG] UPDATE_SHEET - Row: {linha}, Colunas: {colunas}, Valores: {valores}")
                     
-                    for coluna, valor in zip(colunas, valores):
-                        col_idx = header_map.get(coluna)
-                        if col_idx:
-                            batch_update_cells.append(gspread.Cell(linha, col_idx, str(valor)))
-                        else:
-                            logger.debug(f"UPDATE (Linha {linha}): Coluna '{coluna}' não encontrada no mapa.")
+                    # Validar job: rejeitar se colunas ou valores estiverem vazios
+                    if not colunas or not valores:
+                        logger.warning(f"Job UPDATE_SHEET com dados vazios: row={linha}. Pulando job.")
+                    else:
+                        for coluna, valor in zip(colunas, valores):
+                            col_idx = header_map.get(coluna)
+                            if col_idx:
+                                valor_sanitizado = sanitizar_para_sheets(valor)
+                                batch_update_cells.append(gspread.Cell(linha, col_idx, valor_sanitizado))
+                            else:
+                                logger.warning(f"UPDATE (Linha {linha}): Coluna '{coluna}' não encontrada no header_map. Pulando esta célula.")
+                                # Não adiciona ao batch se a coluna não existe
                 
                 elif tipo_job == "APPEND_ERROR_LOG":
                     dados_linha = payload['dados_linha']
-                    batch_append_rows.append(dados_linha)
+                    dados_sanitizados = [sanitizar_para_sheets(v) for v in dados_linha]
+                    batch_append_rows.append(dados_sanitizados)
                     logger.debug(f"APPEND: Novo log de erro adicionado ao lote: {dados_linha[1]}")
-
-                elif tipo_job == "UPDATE_CELLS_SPARSE":
-                    linha = int(payload['row'])
-                    colunas = payload['colunas']
-                    valores = payload['novos_valores']
-                    
-                    for coluna, valor in zip(colunas, valores):
-                        col_idx = header_map.get(coluna)
-                        if col_idx:
-                            cell_ref = gspread.utils.rowcol_to_a1(linha, col_idx)
-                            try:
-                                ws_main.update_acell(cell_ref, str(valor))
-                                logger.debug(f"SPARSE UPDATE: {cell_ref} = '{valor}'")
-                            except Exception as e:
-                                logger.error(f"SPARSE UPDATE falhou em {cell_ref}: {e}")
-                        else:
-                            logger.warning(f"SPARSE UPDATE: Coluna '{coluna}' não encontrada no mapa.")
 
                 else:
                     logger.warning(f"Job recebido com tipo desconhecido: '{tipo_job}'")
@@ -232,6 +250,9 @@ def iniciar_writer(config):
                 
                 # --- 4. ENVIAR LOTE DE UPDATES ---
                 if batch_update_cells:
+                    # DEBUG: Log das células que serão enviadas
+                    debug_cells = [(f"R{c.row}C{c.col}", c.value[:30] if c.value and len(c.value) > 30 else c.value) for c in batch_update_cells[:10]]
+                    logger.info(f"[DEBUG] cells a enviar (primeiras 10): {debug_cells}")
                     logger.info(f"Enviando lote de {len(batch_update_cells)} CÉLULAS para atualização...")
                     try:
                         resp = send_update_cells(ws_main, batch_update_cells)
@@ -245,15 +266,36 @@ def iniciar_writer(config):
                         logger.success("Lote de CÉLULAS enviado com sucesso.")
                     except Exception as ex:
                         err = _extract_api_error(ex)
-                        logger.exception(f"Falha ao enviar lote de CÉLULAS. Mantendo no buffer para tentativa futura. Erro API: {err}")
-                        # Persiste o batch para reprocessamento manual
-                        try:
-                            payload = [{'row': c.row, 'col': c.col, 'value': c.value} for c in batch_update_cells]
-                        except Exception:
-                            payload = str(batch_update_cells[:50])
-                        persist_failed_batch('update_cells', payload, error=err)
-                        time.sleep(30)
-                        # Não limpar o batch: tentaremos novamente no próximo ciclo
+                        err_lower = str(err).lower()
+
+                        if "400" in err_lower:
+                            logger.warning(f"Batch falhou com erro 400. Ativando fallback célula por célula...")
+                            resultado_fallback = fallback_update_cells(ws_main, batch_update_cells)
+
+                            if not resultado_fallback.get('falhas'):
+                                logger.success(f"[FALLBACK] Todas {resultado_fallback['sucessos']} células enviada via fallback!")
+                                batch_update_cells.clear()
+                            else:
+                                logger.error(f"[FALLBACK] {len(resultado_fallback['falhas'])} células falharam definitivamente.")
+                                persist_failed_batch('update_cells', resultado_fallback['falhas'], error=err)
+                                batch_update_cells.clear()
+                        else:
+                            is_irrecuperable = any(keyword in err_lower for keyword in [
+                                "protected cell",
+                                "protected object",
+                                "remove protection"
+                            ])
+
+                            if is_irrecuperable:
+                                logger.critical(f"Erro irrecuperável ao enviar lote: {err}. Descartando batch imediatamente.")
+                                try:
+                                    payload = [{'row': c.row, 'col': c.col, 'value': c.value} for c in batch_update_cells]
+                                except Exception:
+                                    payload = str(batch_update_cells[:50])
+                                persist_failed_batch('update_cells', payload, error=err)
+                                batch_update_cells.clear()
+                            else:
+                                logger.error(f"Lote de CÉLULAS falhou: {err}. Batch mantido para próximo ciclo.")
                 
                 # --- 5. ENVIAR LOTE DE APPENDS ---
                 if batch_append_rows:
@@ -269,15 +311,41 @@ def iniciar_writer(config):
                         logger.success("Lote de LINHAS enviado com sucesso.")
                     except Exception as ex:
                         err = _extract_api_error(ex)
-                        logger.exception(f"Falha ao enviar lote de LINHAS. Mantendo no buffer para tentativa futura. Erro API: {err}")
-                        # Persiste o batch para reprocessamento manual
-                        try:
-                            payload = batch_append_rows
-                        except Exception:
-                            payload = str(batch_append_rows[:20])
-                        persist_failed_batch('append_rows', payload, error=err)
-                        time.sleep(30)
-                        # Não limpar o batch: tentaremos novamente no próximo ciclo
+                        err_lower = str(err).lower()
+
+                        if "400" in err_lower:
+                            logger.warning(f"Lote de linhas falhou com erro 400. Tentando linha por linha...")
+                            resultado_fallback = []
+                            for linha in batch_append_rows:
+                                try:
+                                    ws_errors.append_rows([linha], value_input_option='USER_ENTERED')
+                                    logger.debug(f"[FALLBACK] Linha appendada OK")
+                                    resultado_fallback.append(True)
+                                except Exception as ex_inner:
+                                    logger.error(f"[FALLBACK] Falha ao appendar linha: {ex_inner}")
+                                    resultado_fallback.append(False)
+
+                            if all(resultado_fallback):
+                                logger.success("[FALLBACK] Todas linhas appendadas via fallback!")
+                                batch_append_rows.clear()
+                            else:
+                                falhas = [linha for i, linha in enumerate(batch_append_rows) if not resultado_fallback[i]]
+                                logger.error(f"[FALLBACK] {len(falhas)} linhas falharam definitivamente.")
+                                persist_failed_batch('append_rows', falhas, error=err)
+                                batch_append_rows.clear()
+                        else:
+                            is_irrecuperable = any(keyword in err_lower for keyword in [
+                                "protected cell",
+                                "protected object",
+                                "remove protection"
+                            ])
+
+                            if is_irrecuperable:
+                                logger.critical(f"Erro irrecuperável ao enviar lote de linhas: {err}. Descartando batch imediatamente.")
+                                persist_failed_batch('append_rows', batch_append_rows, error=err)
+                                batch_append_rows.clear()
+                            else:
+                                logger.error(f"Lote de LINHAS falhou: {err}. Batch mantido para próximo ciclo.")
 
         except gspread.exceptions.APIError as e:
             logger.error(f"Erro de API do Google: {e}. Tentando novamente em 60s...")

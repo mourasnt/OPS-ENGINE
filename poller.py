@@ -215,10 +215,10 @@ def verificar_pendencias_api(config, r_filas):
                     colunas_alvos = ["PRÉ SM", "SM EFET."]
                 elif job_type == "efetivacao_sm":
                     colunas_alvos = ["COD SM", "SM EFET."]
-                    tipo_job_writer = "UPDATE_CELLS_SPARSE"
                 elif job_type == "preencher_sm":
                     colunas_alvos = ["COD SM"]
-                valores_finais = []
+                else:
+                    print(f"Job type {job_type} não reconhecido para ID {id_3zx}. Verificando resultado da API mesmo assim...")
                 
                 if api_result.get("sucesso"):
                     if job_type == "criar_pre_sm":
@@ -257,12 +257,16 @@ def verificar_pendencias_api(config, r_filas):
                     history.update_job_status(id_3zx, job_id_clean, rownum, "ERROR", err)
 
                 # Manda ordem para o Writer preencher a planilha
-                job_writer = {
-                    "tipo_job": tipo_job_writer,
-                    "payload": {"row": int(rownum), "colunas": colunas_alvos, "novos_valores": valores_finais}
-                }
-                r_filas.rpush(fila_resultados, json.dumps(job_writer))
-                
+                # Validar: só enviar se houver colunas e valores
+                if not colunas_alvos or not valores_finais:
+                    logger.warning(f"[API] Job {job_type} para ID {id_3zx} ignorado: colunas={colunas_alvos}, valores={valores_finais}")
+                else:
+                    job_writer = {
+                        "tipo_job": tipo_job_writer,
+                        "payload": {"row": int(rownum), "colunas": colunas_alvos, "novos_valores": valores_finais}
+                    }
+                    r_filas.rpush(fila_resultados, json.dumps(job_writer))
+                 
                 # Libera o job do Set de Controle
                 r_filas.srem(s_controle, id_3zx)
 
@@ -337,6 +341,9 @@ def iniciar_poller(config):
     STATUS_EFETIVACAO = sm_cfg.get('status_array_efetivacao')
     HR_ANTES_ETA = sm_cfg.get('HR_ANTES_ETA', 7)
 
+    # Campos que disparam rebuild do Pré-SM (mudanças relevantes)
+    CAMPOS_REBUILD_PRE_SM = ["Origem", "Destino", "Motorista", "Placa", "Placa 2", "ETA Origem", "ETA Destino", "CPT"]
+
 
     creds_path = os.environ.get('GOOGLE_APPLICATION_CREDENTIALS') or config.get('creds_path')
 
@@ -408,7 +415,7 @@ def iniciar_poller(config):
                 mudancas = verificar_mudancas_cdc(r_state, linha, id_3zx, campos_monitorados)
 
                 # --- 1. Lógica de Limpeza ---
-                if statusEmissao in STATUS_EMISSAO_TERMINAIS and (mdfe_baixado == "SIM" or mdfe == False ):
+                if statusEmissao in STATUS_EMISSAO_TERMINAIS and (mdfe_baixado == "SIM" or not mdfe):
                     foi_removido = r_filas.srem(s_controle, id_3zx)
                     if foi_removido == 1:
                         logger.debug(f"Job {lt} concluído. Removido do set de controle.")
@@ -437,8 +444,8 @@ def iniciar_poller(config):
                     else:
                         logger.debug(f"Job {lt} (Cancelar Pré-SM) já está em progresso. Pulando.")
 
-                # Fila: Refazer PRÉ-SM (apenas se houver mudanças e ainda não tiver SM efetivada)
-                elif pre_sm_val.isdigit() and sm_efet_val == 'PENDENTE' and status in STATUS_PRE_SM and mudancas and any(mudancas.get(coluna) for coluna in campos_monitorados if coluna in ("Origem", "Destino", "Motorista", "Placa", "Placa 2", "ETA Origem", "ETA Destino", "CPT", "CPF")):
+                # Fila: Refazer PRÉ-SM (apenas se houver mudanças nos campos relevantes)
+                elif pre_sm_val.isdigit() and sm_efet_val == 'PENDENTE' and status in STATUS_PRE_SM and mudancas and any(mudancas.get(c) for c in CAMPOS_REBUILD_PRE_SM):
                     foi_adicionado = r_filas.sadd(s_controle, id_3zx)
                     if foi_adicionado == 1:
                         job_payload = {'row': linha['original_row_number'], 'data': linha}
@@ -458,19 +465,17 @@ def iniciar_poller(config):
                         cont_efetivacao += 1
                     else:
                         logger.debug(f"Job {lt} (Efetivação SM) já está em progresso. Pulando.")
-                """
-                #Temporario
-                if status in STATUS_EFETIVACAO and sm_efet_val == 'OK' and cod_sm in ("", "None", None, "-", " ", "  "):
+                
+                # Fila: PREENCHER COD SM (quando SM EFET está OK mas COD SM está vazio)
+                if pre_sm_val.isdigit() and sm_efet_val == 'OK' and cod_sm in ("", "None", None, "-", " ", "  ") and status in STATUS_EFETIVACAO:
                     foi_adicionado = r_filas.sadd(s_controle, id_3zx)
-
                     if foi_adicionado == 1:
                         job_payload = {'row': linha['original_row_number'], 'data': linha}
                         r_filas.rpush(q_preenchersm, json.dumps(job_payload))
-                        logger.info(f"Novo job de EFETIVAÇÃO SM para LT {lt} (Linha {linha['original_row_number']}) - Temporário para casos sem COD SM")
+                        logger.info(f"Novo job de PREENCHER COD SM para LT {lt} (Linha {linha['original_row_number']})")
                         cont_preencher_sm += 1
                     else:
-                        logger.debug(f"Job {lt} (Efetivação SM - Temporário) já está em progresso. Pulando.")
-                """
+                        logger.debug(f"Job {lt} (Preencher COD SM) já está em progresso. Pulando.")
 
                 # Fila: Conferência
                 if statusEmissao == 'Pendente' and status in STATUS_CONFERIR:
@@ -501,7 +506,7 @@ def iniciar_poller(config):
                         logger.debug(f"Job {lt} (Emissão) já está em progresso. Pulando.")
 
                 # Fila: Encerramento de Manifesto (MDFe)
-                elif mdfe and mdfe_baixado != 'SIM' and statusEmissao in STATUS_EMISSAO_TERMINAIS and status in ("ENTREGA FINALIZADA", "AGUARDANDO DESCARGA"):
+                elif mdfe and mdfe_baixado != 'SIM' and status in ("ENTREGA FINALIZADA", "AGUARDANDO DESCARGA"):
                     logger.debug(f"MDFe {mdfe} encontrado para LT {lt}. Verificando se deve criar job de encerramento...")
                     manifesto_id = f"{mdfe}-{lt}"
                     foi_adicionado_manifesto = r_filas.sadd(s_manifesto, manifesto_id)

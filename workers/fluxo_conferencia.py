@@ -137,8 +137,8 @@ class ConferenciaWorker(BaseWorker):
         status_emiteai = obter_status_lt(self.page, carga.numero_lt)
         logger.info(f"[Worker Conferência] [LT {numero_lt}] ✅ Status obtido: {status_emiteai}")
         
-        colunas_update = ["Data Conferência", "Status EmiteAI (coletado)"]
-        valores_update = [data_agora, status_emiteai]
+        colunas_update = []
+        valores_update = []
 
         if status_emiteai == "Aguardando Conferência":
             logger.info(f"[Worker Conferência] [LT {numero_lt}] 📝 Passo 3/3: Executando conferência...")

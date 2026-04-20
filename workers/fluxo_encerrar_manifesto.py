@@ -1,11 +1,23 @@
 import datetime
 import json
+import os
 import time
 from loguru import logger
 from playwright.sync_api import Page
 from utils.config import Config
 
 from workers.base import BaseWorker
+
+
+def _capturar_debug(page, prefixo, numero_lt):
+    debug_dir = os.path.join(os.getcwd(), "debug_screenshots")
+    os.makedirs(debug_dir, exist_ok=True)
+    screenshot_path = os.path.join(debug_dir, f"{prefixo}_{numero_lt}.png")
+    try:
+        page.screenshot(path=screenshot_path)
+        logger.debug(f"[DEBUG] Screenshot salvo: {screenshot_path}")
+    except Exception as e:
+        logger.debug(f"[DEBUG] Falha ao capturar screenshot: {e}")
 
 
 def enviar_job_update(r_client, config: dict, row: int, colunas: list, valores: list):
@@ -65,19 +77,33 @@ class ManifestoWorker(BaseWorker):
         mdfe = (data.get('MDFe') or '').strip()
         lt = (data.get('N° Carga') or '').strip()
         manifesto_id = f"{mdfe}-{lt}"
-        
-        logger.info(f"[Worker Manifesto] Processando MDFe {mdfe} (Linha {row})")
-        
+
+        logger.info(f"[Worker Manifesto] Processando MDFe {mdfe} (Linha {row}) - LT: {lt}")
+
+        try:
+            _capturar_debug(self.page, "inicio_worker", lt)
+        except Exception:
+            pass
+
         from utils.manifesto_utils import navegar_e_validar_mdfe
+        logger.debug(f"[Worker Manifesto] Chamando navegar_e_validar_mdfe para LT: {lt}")
         resultado = navegar_e_validar_mdfe(self.page, lt)
-        
+
         if not resultado:
             logger.error(f"[Worker Manifesto] Não foi possível navegar/validar MDFe {mdfe}.")
+            logger.debug(f"[Worker Manifesto] URL no erro: {self.page.url}")
+
+            try:
+                _capturar_debug(self.page, "erro_navegar_validar", lt)
+            except Exception:
+                pass
+
             enviar_job_append_erro(self.redis, self.config, mdfe, "Erro Navegação/Validação", "Card não encontrado")
             return
 
         status_mdfe = resultado.get("status_mdfe")
-        
+        logger.debug(f"[Worker Manifesto] Status MDFe: {status_mdfe}")
+
         if status_mdfe == "encerrado":
             logger.warning(f"[Worker Manifesto] MDFe {mdfe} já encerrado.")
             enviar_job_update(self.redis, self.config, row, ["MDF-e Baixado ?"], ["SIM"])
