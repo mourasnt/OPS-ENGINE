@@ -71,7 +71,7 @@ def _capturar_debug(page,prefixo,numero_lt):
         logger.debug(f"[DEBUG] Falha ao capturar screenshot: {e}")
 
 def goto_cards(page,numero_lt:str="unknown"):
-    """Navega para a aba 'Cards' de emissão."""
+    """Navega para a aba 'Cards' de emissao."""
     logger.debug(f"[goto_cards] INICIO - LT: {numero_lt} - URL: {page.url}")
 
     garantir_pagina_consulta(page,"https://portal.emiteai.com.br/#/emissor",'[role="tab"]:has-text("Cards")')
@@ -85,23 +85,45 @@ def goto_cards(page,numero_lt:str="unknown"):
         logger.debug(f"[goto_cards] Fechando modal close button...")
         page.get_by_role("button",name="close").click()
 
+    # Debug antes de clicar na aba Cards
+    logger.debug(f"[goto_cards] Antes de clicar na aba Cards - URL: {page.url}")
+    try:
+        _capturar_debug(page, "antes_clique_cards", numero_lt)
+    except Exception:
+        pass
+
     cards_tab=page.get_by_text("Cards")
     cards_tab.scroll_into_view_if_needed()
     cards_tab.click(force=True)
     logger.debug(f"[goto_cards] Clique na aba Cards executado")
 
+    # Espera mais robusta da aba Cards
     try:
         cards_tab_active=page.locator('[role="tab"][aria-selected="true"]:has-text("Cards")')
         cards_tab_active.wait_for(state="visible",timeout=10000)
-    except Exception:
-        page.wait_for_timeout(2000)
+        logger.debug(f"[goto_cards] Aba Cards ativada com sucesso")
+    except Exception as e:
+        logger.warning(f"[goto_cards] Erro ao verificar aba Cards: {e}")
+        # Capturar screenshot do erro
+        try:
+            _capturar_debug(page, "erro_aba_cards", numero_lt)
+        except Exception:
+            pass
+        # Tentar clicar novamente como fallback
+        try:
+            cards_tab.click()
+            page.wait_for_timeout(3000)
+            logger.debug(f"[goto_cards] Retry clique na aba Cards executado")
+        except Exception as retry_err:
+            logger.warning(f"[goto_cards] Retry falhou: {retry_err}")
 
-    logger.debug(f"[goto_cards] FIM - URL: {page.url}")
-
+    # Debug apos clique bem-sucedido
     try:
-        _capturar_debug(page,"goto_cards",numero_lt)
+        _capturar_debug(page, "apos_clique_cards", numero_lt)
     except Exception:
         pass
+
+    logger.debug(f"[goto_cards] FIM - URL: {page.url}")
 
 
 def identificar_tipo_card(card: Locator) -> str | None:
