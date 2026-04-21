@@ -168,7 +168,7 @@ class EmissaoWorker(BaseWorker):
         else:
             logger.warning(f"[Worker Emissão] [LT {numero_lt}] Status '{status_card}' não tratado.")
 
-        if len(colunas_update) > 1:
+        if len(colunas_update) > 0:
             enviar_job_update(self.redis, self.config, row, colunas_update, valores_update)
         else:
             logger.info(f"[Worker Emissão] [LT {numero_lt}] Nenhuma atualização necessária.")
