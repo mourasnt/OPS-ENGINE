@@ -234,6 +234,16 @@ class WorkerSM:
             self.history.update_job_status(id_3zx, job_id, rownum, status="ERROR", error=err)
             logger.warning(f"Job {job_type} recusado imediatamente pela API: {err}")
 
+            # Cleanup do set de controle para erro imediato (Fluxo C)
+            job_types_sm = ("criar_pre_sm", "cancelar_pre_sm", "refazer_pre_sm", "efetivacao_sm", "preencher_sm")
+            if job_type in job_types_sm:
+                s_controle = self.config_dict.get('redis_settings', {}).get('control_set', 'jobs_em_progresso')
+                try:
+                    self.r_filas.srem(s_controle, id_3zx)
+                    logger.debug(f"[Worker SM] Controle limpo para {id_3zx} (erro imediato)")
+                except Exception as e:
+                    logger.error(f"[Worker SM] Falha ao limpar controle para {id_3zx}: {e}")
+
     def iniciar_consumo(self):
         logger.info("="*60)
         logger.info(f"Worker API iniciado.")
@@ -260,7 +270,7 @@ class WorkerSM:
                     elif fila_origem == self.q_refazer_pre_sm:
                         self.refazer_single_pre_sm(linha_planilha)
                     else:
-                        print(f"Fila desconhecida: {fila_origem}")
+                        logger.warning(f"Fila desconhecida: {fila_origem}")
 
             except json.JSONDecodeError:
                 logger.error("Erro ao decodificar JSON da fila do Redis.")
