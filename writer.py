@@ -158,6 +158,7 @@ def iniciar_writer(config):
     r_port = int(os.environ.get('REDIS_PORT'))
     r_db = redis_cfg.get('db_fila')
     fila_resultados = redis_cfg.get('results_queue')
+    s_controle = redis_cfg.get('control_set', 'jobs_em_progresso')
 
     writer_cfg = config.get('writer_settings', {})
     max_batch_cells = writer_cfg.get('batch_max_size_cells', 200)
@@ -196,6 +197,7 @@ def iniciar_writer(config):
     # --- Listas de Lote (Batch) ---
     batch_update_cells = []
     batch_append_rows = []
+    ids_para_limpar = []  # IDs 3ZX para cleanup após envio bem-sucedido
     
     while True:
         try:
@@ -215,10 +217,18 @@ def iniciar_writer(config):
                 
                 if tipo_job == "UPDATE_SHEET":
                     linha = int(payload['row'])
-                    colunas = payload['colunas']
-                    valores = payload['novos_valores']
+                    colunas = payload.get('colunas', [])
+                    valores = payload.get('novos_valores', [])
+                    id_3zx = payload.get('id_3zx')  # ID para cleanup
+
                     logger.info(f"[DEBUG] UPDATE_SHEET - Row: {linha}, Colunas: {colunas}, Valores: {valores}")
-                    
+
+                    # Identificar jobs de SM que precisam de cleanup
+                    colunas_sm = ["PRÉ SM", "COD SM", "SM EFET."]
+                    if id_3zx and any(col in colunas for col in colunas_sm):
+                        ids_para_limpar.append(id_3zx)
+                        logger.debug(f"[Writer] Job SM identificado para cleanup: {id_3zx}")
+
                     # Validar job: rejeitar se colunas ou valores estiverem vazios
                     if not colunas or not valores:
                         logger.warning(f"Job UPDATE_SHEET com dados vazios: row={linha}. Pulando job.")
@@ -262,6 +272,16 @@ def iniciar_writer(config):
                         except Exception:
                             logger.debug("Resposta do update_cells não serializável para log.")
 
+                        # Cleanup: remover IDs do set de controle para jobs de SM
+                        if ids_para_limpar:
+                            for id_limpar in ids_para_limpar:
+                                try:
+                                    r.srem(s_controle, id_limpar)
+                                    logger.debug(f"[Writer] Controle limpo para {id_limpar}")
+                                except Exception as e:
+                                    logger.error(f"[Writer] Falha ao limpar controle para {id_limpar}: {e}")
+                            ids_para_limpar.clear()
+
                         batch_update_cells.clear()
                         logger.success("Lote de CÉLULAS enviado com sucesso.")
                     except Exception as ex:
@@ -274,6 +294,17 @@ def iniciar_writer(config):
 
                             if not resultado_fallback.get('falhas'):
                                 logger.success(f"[FALLBACK] Todas {resultado_fallback['sucessos']} células enviada via fallback!")
+
+                                # Cleanup também no fallback
+                                if ids_para_limpar:
+                                    for id_limpar in ids_para_limpar:
+                                        try:
+                                            r.srem(s_controle, id_limpar)
+                                            logger.debug(f"[Writer] Controle limpo (fallback) para {id_limpar}")
+                                        except Exception as e:
+                                            logger.error(f"[Writer] Falha ao limpar controle para {id_limpar}: {e}")
+                                    ids_para_limpar.clear()
+
                                 batch_update_cells.clear()
                             else:
                                 logger.error(f"[FALLBACK] {len(resultado_fallback['falhas'])} células falharam definitivamente.")

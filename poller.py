@@ -256,19 +256,24 @@ def verificar_pendencias_api(config, r_filas):
                         print(f"Erro na efetivação da SM para ID {id_3zx}: {err}")
                     history.update_job_status(id_3zx, job_id_clean, rownum, "ERROR", err)
 
-                # Manda ordem para o Writer preencher a planilha
+# Manda ordem para o Writer preencher a planilha
                 # Validar: só enviar se houver colunas e valores
                 if not colunas_alvos or not valores_finais:
                     logger.warning(f"[API] Job {job_type} para ID {id_3zx} ignorado: colunas={colunas_alvos}, valores={valores_finais}")
+                    # Para jobs ignorados, ainda assim limpa o controle
+                    r_filas.srem(s_controle, id_3zx)
                 else:
                     job_writer = {
                         "tipo_job": tipo_job_writer,
-                        "payload": {"row": int(rownum), "colunas": colunas_alvos, "novos_valores": valores_finais}
+                        "payload": {
+                            "row": int(rownum),
+                            "colunas": colunas_alvos,
+                            "novos_valores": valores_finais,
+                            "id_3zx": id_3zx
+                        }
                     }
                     r_filas.rpush(fila_resultados, json.dumps(job_writer))
-                 
-                # Libera o job do Set de Controle
-                r_filas.srem(s_controle, id_3zx)
+                    # Cleanup será feito pelo Writer após atualizar a planilha
 
     except Exception as e:
         logger.error(f"Erro ao verificar pendências da API no Poller: {e}")
@@ -520,6 +525,8 @@ def iniciar_poller(config):
                         cont_manifesto += 1
                     else:
                         logger.debug(f"Job de Manifesto {mdfe} já está em progresso. Pulando.")
+                if mdfe == "49083":
+                    print(f"DEBUG: LT {lt} tem MDFe 49083. statusEmissao={statusEmissao}, status={status}, mdfe_baixado={mdfe_baixado}, manifest_id={manifesto_id}, foi_adicionado_manifesto={foi_adicionado_manifesto}")
                         
             except Exception as e:
                 logger.error(f"Erro ao processar linha {linha.get('original_row_number', 'N/A')}: {e}")
