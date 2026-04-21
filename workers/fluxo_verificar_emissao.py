@@ -155,7 +155,7 @@ class EmissaoWorker(BaseWorker):
                     elif resultado_mdfe["status"] == "falha_rpa":
                         logger.error(f"[Worker Emissão] [LT {numero_lt}] Falha RPA MDFe: {resultado_mdfe.get('motivo')}")
                 
-                elif status_mdfe == "-" or status_transporte in ["ENTREGA FINALIZADA", "AGUARDANDO DESCARGA"]:
+                elif status_mdfe == "-" or status_transporte in ("ENTREGA FINALIZADA", "AGUARDANDO DESCARGA"):
                     logger.info(f"[Worker Emissão] [LT {numero_lt}] MDF-e não necessário.")
                     mdfe_preenchido = True
 
