@@ -37,7 +37,7 @@ logger.remove()
 
 def filtro_logs_importantes(record):
     level_name = record["level"].name
-    return level_name in ["WARNING", "ERROR", "CRITICAL", "SUCCESS", "INFO"]
+    return level_name in ["WARNING", "ERROR", "CRITICAL", "SUCCESS", "INFO", "DEBUG"]
 
 logger.add(
     sink=sys.stdout, 

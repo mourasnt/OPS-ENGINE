@@ -142,7 +142,7 @@ def verificar_mudancas_cdc(r_state, linha, id_3zx, campos_monitorados):
     """
     if not id_3zx:
         return
-    
+
     estado_atual = {campo: str(linha.get(campo, "")).strip() for campo in campos_monitorados}
     redis_key = f"viagem_state:{id_3zx}"
 
@@ -152,29 +152,27 @@ def verificar_mudancas_cdc(r_state, linha, id_3zx, campos_monitorados):
         if estado_anterior_str:
             estado_anterior = json.loads(estado_anterior_str)
             mudancas = {}
-            
-            # Compara campo a campo
+
             for campo in campos_monitorados:
                 val_anterior = estado_anterior.get(campo, "")
                 val_atual = estado_atual.get(campo, "")
-                
+
                 if val_anterior != val_atual and val_atual not in ("", "None", None, "-"):
                     mudancas[campo] = {"de": val_anterior, "para": val_atual}
 
             if mudancas:
-                logger.info(f"🔄 [CDC DETECTOU MUDANÇA] ID 3ZX: {id_3zx} | Alterações: {json.dumps(mudancas, ensure_ascii=False)}")
+                logger.debug(f"[CDC] Mudanca detectada para ID {id_3zx}: {list(mudancas.keys())}")
                 r_state.set(redis_key, json.dumps(estado_atual))
                 return mudancas
             return None
         else:
-            # Primeira vez vendo essa viagem: salva o estado base (silenciosamente)
             r_state.set(redis_key, json.dumps(estado_atual))
             return None
 
     except Exception as e:
-        logger.error(f"Erro ao verificar mudanças CDC para ID {id_3zx}: {e}")
+        logger.error(f"Erro ao verificar mudancas CDC para ID {id_3zx}: {e}")
         return None
-    
+
 def verificar_pendencias_api(config, r_filas):
     """Lê os jobs pendentes no Redis, consulta a API e manda ordens pro Writer"""
     try:
@@ -218,8 +216,8 @@ def verificar_pendencias_api(config, r_filas):
                 elif job_type == "preencher_sm":
                     colunas_alvos = ["COD SM"]
                 else:
-                    print(f"Job type {job_type} não reconhecido para ID {id_3zx}. Verificando resultado da API mesmo assim...")
-                
+                    logger.warning(f"Job type {job_type} nao reconhecido para ID {id_3zx}")
+
                 if api_result.get("sucesso"):
                     if job_type == "criar_pre_sm":
                         valores_finais = [api_result.get("resultado", {}).get("PreSM", {}).get("Codigo", "ERRO: Sem Código")]
@@ -231,11 +229,10 @@ def verificar_pendencias_api(config, r_filas):
                         codigo_sm = api_result.get("resultado", {}).get("CodSolicitacao", "")
                         valores_finais = [codigo_sm, "OK"]
                     elif job_type == "preencher_sm":
-                        print(f"API retornou sucesso para efetivação da SM. Verificando resultado para ID {id_3zx}...")
-                        print(f"Resultado da API: {json.dumps(api_result, ensure_ascii=False)}")
+                        logger.debug(f"Preencher SM - ID {id_3zx}: {api_result.get('resultado', {}).get('CodSolicitacao')}")
                         valores_finais = [api_result.get("resultado").get("CodSolicitacao")]
                     else:
-                        print(f"Job type {job_type} não reconhecido para ID {id_3zx}. Verificando resultado da API mesmo assim...")
+                        logger.warning(f"Job type {job_type} nao reconhecido para ID {id_3zx}")
                     history.update_job_status(id_3zx, job_id_clean, rownum, "SUCCESS")
                 else:
                     if job_type in ("criar_pre_sm", "refazer_pre_sm"):
@@ -253,7 +250,7 @@ def verificar_pendencias_api(config, r_filas):
                         valores_finais = [f"ERRO: {err}", f"ERRO: {err}"]
                     else:
                         err = api_result.get("erro") or "Erro desconhecido"
-                        print(f"Erro na efetivação da SM para ID {id_3zx}: {err}")
+                        logger.warning(f"Erro na efetivacao da SM para ID {id_3zx}: {err}")
                     history.update_job_status(id_3zx, job_id_clean, rownum, "ERROR", err)
 
 # Manda ordem para o Writer preencher a planilha

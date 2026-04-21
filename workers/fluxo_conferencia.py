@@ -34,9 +34,9 @@ def enviar_job_update(r_client: redis.Redis, config: dict, row: int, colunas: li
             }
         }
         r_client.rpush(results_queue, json.dumps(payload))
-        logger.debug(f"[Worker Conferência] Job UPDATE (Linha {row}) enviado ao Writer: {colunas} = {valores}")
+        logger.debug(f"[Worker Conferencia] Job UPDATE (Linha {row}) enviado ao Writer: {colunas} = {valores}")
     except Exception as e:
-        logger.error(f"[Worker Conferência] Falha ao enviar job UPDATE (Linha {row}) para o Redis: {e}")
+        logger.error(f"[Worker Conferencia] Falha ao enviar job UPDATE (Linha {row}) para o Redis: {e}")
 
 
 def enviar_job_append_erro(r_client: redis.Redis, config: dict, numero_lt: str, campo: str, valor: str):
@@ -52,9 +52,9 @@ def enviar_job_append_erro(r_client: redis.Redis, config: dict, numero_lt: str, 
             }
         }
         r_client.rpush(results_queue, json.dumps(payload))
-        logger.debug(f"[Worker Conferência] Job APPEND (LT {numero_lt}) enviado ao Writer: {campo} -> {valor}")
+        logger.debug(f"[Worker Conferencia] Job APPEND (LT {numero_lt}) enviado ao Writer: {campo} -> {valor}")
     except Exception as e:
-        logger.error(f"[Worker Conferência] Falha ao enviar job APPEND (LT {numero_lt}) para o Redis: {e}")
+        logger.error(f"[Worker Conferencia] Falha ao enviar job APPEND (LT {numero_lt}) para o Redis: {e}")
 
 
 class ConferenciaWorker(BaseWorker):
@@ -86,7 +86,7 @@ class ConferenciaWorker(BaseWorker):
             seletor_chave=SELETOR_CHAVE_CONSULTA
         )
         if not pagina_esta_ok:
-            logger.warning("[Worker Conferência] Página inacessível. Re-adicionando job à fila.")
+            logger.warning("[Worker Conferencia] Página inacessível. Re-adicionando job à fila.")
             self.redis.rpush(self.queue_name, json.dumps({"row": row, "data": data}))
             return
         
@@ -98,67 +98,67 @@ class ConferenciaWorker(BaseWorker):
             with TimeoutDetector("Recarregar página", max_seconds=20, job_id=numero_lt):
                 self.page.reload(wait_until="domcontentloaded", timeout=PAGE_RELOAD_TIMEOUT)
         except Exception as reload_err:
-            logger.error(f"[Worker Conferência] Falha ao recarregar página: {reload_err}")
+            logger.error(f"[Worker Conferencia] Falha ao recarregar página: {reload_err}")
             try:
                 with TimeoutDetector("Navegar para consulta", max_seconds=20, job_id=numero_lt):
                     self.page.goto(URL_CONSULTA, timeout=PAGE_RELOAD_TIMEOUT)
             except Exception:
-                logger.error(f"[Worker Conferência] Falha ao navegar para consulta")
+                logger.error(f"[Worker Conferencia] Falha ao navegar para consulta")
                 return
         
         carga = Carga.from_row(data)
         data_agora = datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')
         
         if not carga:
-            logger.warning(f"[Worker Conferência] LT {numero_lt} (Linha {row}) pulada: dados inválidos.")
+            logger.warning(f"[Worker Conferencia] LT {numero_lt} (Linha {row}) pulada: dados inválidos.")
             return
 
         if carga.status_emissao != "Pendente":
-            logger.warning(f"[Worker Conferência] LT {numero_lt}: Status não é 'Pendente' ({carga.status_emissao}). Pulando.")
+            logger.warning(f"[Worker Conferencia] LT {numero_lt}: Status não é 'Pendente' ({carga.status_emissao}). Pulando.")
             return
 
         if not carga.numero_lt:
-            logger.warning(f"[Worker Conferência] Linha {row} pulada: sem número de carga.")
+            logger.warning(f"[Worker Conferencia] Linha {row} pulada: sem número de carga.")
             return
 
         status_validos = ["ENTREGA FINALIZADA", "EM TRANSITO", "AGUARDANDO DESCARGA"]
         if carga.status not in status_validos:
-            logger.info(f"[Worker Conferência] LT {numero_lt}: Status '{carga.status}' não requer conferência.")
+            logger.info(f"[Worker Conferencia] LT {numero_lt}: Status '{carga.status}' não requer conferência.")
             return
 
-        # === LÓGICA PRINCIPAL ===
-        logger.info(f"[Worker Conferência] ▶️  Iniciando RPA para LT {numero_lt} (Linha {row})")
-        
-        logger.info(f"[Worker Conferência] [LT {numero_lt}] 📋 Passo 1/3: Aplicando filtro...")
+# === LÓGICA PRINCIPAL ===
+        logger.info(f"[Worker Conferencia] Iniciando RPA para LT {numero_lt} (Linha {row})")
+
+        logger.info(f"[Worker Conferencia] [LT {numero_lt}] Passo 1/3: Aplicando filtro...")
         filtro_cargas(self.page, carga.numero_lt)
-        logger.info(f"[Worker Conferência] [LT {numero_lt}] ✅ Filtro aplicado!")
-        
-        logger.info(f"[Worker Conferência] [LT {numero_lt}] 🔍 Passo 2/3: Obtendo status...")
+        logger.info(f"[Worker Conferencia] [LT {numero_lt}] Filtro aplicado!")
+
+        logger.info(f"[Worker Conferencia] [LT {numero_lt}] Passo 2/3: Obtendo status...")
         status_emiteai = obter_status_lt(self.page, carga.numero_lt)
-        logger.info(f"[Worker Conferência] [LT {numero_lt}] ✅ Status obtido: {status_emiteai}")
-        
+        logger.info(f"[Worker Conferencia] [LT {numero_lt}] Status obtido: {status_emiteai}")
+
         colunas_update = []
         valores_update = []
 
         if status_emiteai == "Aguardando Conferência":
-            logger.info(f"[Worker Conferência] [LT {numero_lt}] 📝 Passo 3/3: Executando conferência...")
+            logger.info(f"[Worker Conferencia] [LT {numero_lt}] Passo 3/3: Executando conferencia...")
             resultado_rpa = conferir_lt(self.page, carga)
-            logger.info(f"[Worker Conferência] [LT {numero_lt}] ✅ Conferência finalizada: {resultado_rpa.get('status')}")
-            
+            logger.info(f"[Worker Conferencia] [LT {numero_lt}] Conferencia finalizada: {resultado_rpa.get('status')}")
+
             if resultado_rpa["status"] == "sucesso":
-                logger.success(f"[Worker Conferência] LT {numero_lt} (Linha {row}) SUCESSO.")
+                logger.success(f"[Worker Conferencia] LT {numero_lt} (Linha {row}) SUCESSO.")
                 colunas_update.append("Status de emissão")
                 valores_update.append("Verificar Emissão")
-            
+
             elif resultado_rpa["status"] == "falha_cadastro":
                 campo_falha = resultado_rpa["campo"]
                 valor_falha = resultado_rpa["valor"]
-                logger.error(f"[Worker Conferência] LT {numero_lt} FALHOU (Cadastro): {campo_falha} - {valor_falha}")
+                logger.error(f"[Worker Conferencia] LT {numero_lt} FALHOU (Cadastro): {campo_falha} - {valor_falha}")
                 enviar_job_append_erro(self.redis, self.config, numero_lt, campo_falha, valor_falha)
             
             elif resultado_rpa["status"] == "falha_rpa":
                 motivo_falha = resultado_rpa.get("motivo") or f"{resultado_rpa.get('campo', 'Erro')}: {resultado_rpa.get('valor', 'Desconhecido')}"
-                logger.error(f"[Worker Conferência] LT {numero_lt} FALHOU (RPA): {motivo_falha}")
+                logger.error(f"[Worker Conferencia] LT {numero_lt} FALHOU (RPA): {motivo_falha}")
 
         elif status_emiteai == "Carga Finalizada" or status_emiteai == "Aguardando Emissão":
             colunas_update.append("Status de emissão")
@@ -169,7 +169,7 @@ class ConferenciaWorker(BaseWorker):
             valores_update.append("Arquivo c/ Erro")
 
         else:
-            logger.warning(f"[Worker Conferência] LT {numero_lt}: Status '{status_emiteai}' não tratado.")
+            logger.warning(f"[Worker Conferencia] LT {numero_lt}: Status '{status_emiteai}' não tratado.")
 
         # Enviar resultado
         enviar_job_update(self.redis, self.config, row, colunas_update, valores_update)

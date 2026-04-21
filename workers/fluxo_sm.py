@@ -270,7 +270,7 @@ class WorkerSM:
                     elif fila_origem == self.q_refazer_pre_sm:
                         self.refazer_single_pre_sm(linha_planilha)
                     else:
-                        print(f"Fila desconhecida: {fila_origem}")
+                        logger.warning(f"Fila desconhecida: {fila_origem}")
 
             except json.JSONDecodeError:
                 logger.error("Erro ao decodificar JSON da fila do Redis.")
