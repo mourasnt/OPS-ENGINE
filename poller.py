@@ -247,7 +247,8 @@ def verificar_pendencias_api(config, r_filas):
                             valores_finais = [f"ERRO: {err}"]
                     elif job_type == "efetivacao_sm":
                         err = api_result.get("erro") or "Erro desconhecido"
-                        valores_finais = [f"ERRO: {err}", f"ERRO: {err}"]
+                        colunas_alvos = []
+                        valores_finais = []
                     else:
                         err = api_result.get("erro") or "Erro desconhecido"
                         logger.warning(f"Erro na efetivacao da SM para ID {id_3zx}: {err}")

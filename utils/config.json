@@ -38,7 +38,7 @@
   },
 
   "poller_settings": {
-    "poll_interval_seconds": 300,
+    "poll_interval_seconds": 60,
     "statusConferir": [
       "ENTREGA FINALIZADA",
       "AGUARDANDO DESCARGA",
@@ -51,7 +51,8 @@
     "status_array_pre_sm": [
       "CONFIRMADO",
       "AGUARDANDO CARREGAMENTO",
-      "PRÉ AGENDADO"
+      "PRÉ AGENDADO",
+      "EM TRANSITO"
     ],
     "status_array_efetivacao": [
       "AGUARDANDO CARREGAMENTO",
