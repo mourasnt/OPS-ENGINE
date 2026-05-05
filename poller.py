@@ -249,13 +249,14 @@ def verificar_pendencias_api(config, r_filas):
                         err = api_result.get("erro") or "Erro desconhecido"
                         colunas_alvos = []
                         valores_finais = []
+                        r_filas.srem(s_controle, id_3zx)
                     else:
                         err = api_result.get("erro") or "Erro desconhecido"
                         logger.warning(f"Erro na efetivacao da SM para ID {id_3zx}: {err}")
+                        r_filas.srem(s_controle, id_3zx)
                     history.update_job_status(id_3zx, job_id_clean, rownum, "ERROR", err)
 
-# Manda ordem para o Writer preencher a planilha
-                # Validar: só enviar se houver colunas e valores
+                # Manda ordem para o Writer preencher a planilha
                 if not colunas_alvos or not valores_finais:
                     logger.warning(f"[API] Job {job_type} para ID {id_3zx} ignorado: colunas={colunas_alvos}, valores={valores_finais}")
                     # Para jobs ignorados, ainda assim limpa o controle
