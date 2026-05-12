@@ -22,6 +22,7 @@ def revisar_lt(page: Page, numero_lt: str) -> Dict[str, Any]:
             logger.warning(f"[Worker Emissão] [LT {numero_lt}] Mais de um card encontrado, usando o primeiro.")
 
         # 2. EXECUTAR A CADEIA DE CLIQUES
+        print("chegou")
         card_locator.nth(0).locator("button").first.click()
         time.sleep(1)
 
