@@ -128,12 +128,9 @@ class JobWatchdog:
         worker_id = job_info["worker_id"]
         tipo = job_info["tipo"]
         
-        # Ícone dinâmico dependendo se é web ou api
-        icone = "🌐" if worker_info.get("tipo", "") in ["conferencia", "emissao", "manifesto"] else "🔌"
-        
         logger.critical(
             f"[Watchdog] 🚨 TRAVAMENTO DETECTADO!\n"
-            f"  {icone} Worker: {worker_id} ({tipo})\n"
+            f"  🌐 Worker: {worker_id} ({tipo})\n"
             f"  📦 Job ID: {job_id}\n"
             f"  ⏳ Duração: {duracao:.1f}s (Máximo era {self.max_job_duration}s)\n"
             f"  🕒 Iniciado em: {job_info['inicio'].strftime('%H:%M:%S')}"
